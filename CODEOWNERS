@@ -1,0 +1,14 @@
+# Code owners for hyper-brain.
+# Maintainer: https://github.com/paul-byford/
+# The corpus is a reviewable, versioned asset: changes to knowledge are reviewed
+# just like changes to code.
+
+*                       @paul-byford
+
+# Knowledge changes get explicit review.
+/corpus/                @paul-byford
+
+# Security-sensitive surfaces.
+/app/brain_app/auth/    @paul-byford
+/infra/                 @paul-byford
+/config/                @paul-byford

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brain-app"
+version = "0.1.0"
+description = "hyper-brain retrieval core and serving"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "paul-byford" }]
+dependencies = [
+  "numpy>=1.26",
+  "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/paul-byford/"
+
+[project.optional-dependencies]
+# Cloud adapters and serving, wired in later phases. Kept optional so the
+# offline core installs with no heavy or cloud dependencies.
+vertex = ["google-cloud-aiplatform>=1.60"]
+mcp = ["mcp>=1.2"]
+agent = ["google-adk>=0.2"]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["brain_app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+markers = [
+  "eval: non-deterministic AI eval tier (offline, deterministic fakes)",
+]
+addopts = "-ra"
+testpaths = ["tests"]

@@ -1,0 +1,4 @@
+# Runtime dependencies of the offline core, pinned loosely for pip-audit.
+# Cloud adapters live in the optional extras in pyproject.toml.
+numpy>=1.26
+pyyaml>=6.0

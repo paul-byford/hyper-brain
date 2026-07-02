@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  functional:
+    name: Pillar 1 - functional
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -e ./app[dev]
+      - name: Lint
+        run: |
+          ruff check app
+          ruff format --check app
+      - name: Unit and integration tests
+        run: pytest app/tests -q
+
+  security:
+    name: Pillar 2 - security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -e ./app[dev]
+      - name: SAST (bandit)
+        run: bandit -q -r app/brain_app
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r app/requirements.txt
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Infrastructure policy-as-code. Runs only once Terraform exists (phase 4),
+      # so CI stays green on the pre-infra skeleton.
+      - name: Terraform present?
+        id: tf
+        run: |
+          if [ -n "$(find infra -name '*.tf' 2>/dev/null)" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkov (infra policy)
+        if: steps.tf.outputs.present == 'true'
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+      - name: Conftest (custom policy)
+        if: steps.tf.outputs.present == 'true'
+        run: |
+          echo "conftest policy checks run here once infra and policy/ exist"
+
+  evals:
+    name: Pillar 3 - AI evals (offline tier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -e ./app[dev]
+      - name: Offline evals
+        run: pytest app/tests -q -m eval
