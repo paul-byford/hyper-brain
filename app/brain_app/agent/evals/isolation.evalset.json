@@ -1,0 +1,46 @@
+{
+  "eval_set_id": "isolation",
+  "name": "isolation",
+  "eval_cases": [
+    {
+      "eval_id": "isolation",
+      "conversation": [
+        {
+          "invocation_id": "da561bd5-c81e-462a-99df-fbb6022a745b",
+          "user_content": {
+            "parts": [
+              {
+                "text": "How do we run interview copilots and candidate sourcing?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "From your permitted domains, the brain found results in: finserv-ai-engineering."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "query": "How do we run interview copilots and candidate sourcing?"
+                },
+                "name": "search"
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "creation_timestamp": 1783085384.8973858
+        }
+      ],
+      "creation_timestamp": 1783085384.8973935,
+      "final_session_state": {}
+    }
+  ],
+  "creation_timestamp": 1783085384.8974004
+}

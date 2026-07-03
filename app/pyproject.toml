@@ -25,7 +25,10 @@ vertex = ["google-cloud-aiplatform>=1.60"]
 # core and the personal demo verify HS256 tokens with the standard library, so
 # google-auth is only needed to verify production Google-signed ID tokens.
 mcp = ["mcp>=1.2", "google-auth>=2.30"]
-agent = ["google-adk>=0.2"]
+# The ADK demo agent and its offline eval tier. The [eval] sub-extra pulls ADK's
+# eval framework (tool_trajectory + ROUGE response_match) so the golden and
+# isolation evals run free in CI.
+agent = ["google-adk[eval]>=1.0"]
 dev = [
   "pytest>=8.0",
   "ruff>=0.6",

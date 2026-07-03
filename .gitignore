@@ -38,3 +38,6 @@ application_default_credentials.json
 Thumbs.db
 .idea/
 .vscode/
+
+# Downloaded local tooling (terraform, conftest, checkov binaries)
+.tools/

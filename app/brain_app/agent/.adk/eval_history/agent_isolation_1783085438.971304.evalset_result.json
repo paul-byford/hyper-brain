@@ -1,0 +1,358 @@
+{
+  "eval_set_result_id": "agent_isolation_1783085438.971304",
+  "eval_set_result_name": "agent_isolation_1783085438.971304",
+  "eval_set_id": "isolation",
+  "eval_case_results": [
+    {
+      "eval_set_file": "isolation",
+      "eval_set_id": "isolation",
+      "eval_id": "isolation",
+      "final_eval_status": 1,
+      "eval_metric_results": null,
+      "overall_eval_metric_results": [
+        {
+          "metric_name": "tool_trajectory_avg_score",
+          "threshold": 1.0,
+          "criterion": {
+            "threshold": 1.0,
+            "include_intermediate_responses_in_final": false
+          },
+          "custom_function_path": null,
+          "score": 1.0,
+          "eval_status": 1,
+          "details": {
+            "rubric_scores": null
+          }
+        },
+        {
+          "metric_name": "response_match_score",
+          "threshold": 0.7,
+          "criterion": {
+            "threshold": 0.7,
+            "include_intermediate_responses_in_final": false
+          },
+          "custom_function_path": null,
+          "score": 1.0,
+          "eval_status": 1,
+          "details": {
+            "rubric_scores": null
+          }
+        }
+      ],
+      "eval_metric_result_per_invocation": [
+        {
+          "actual_invocation": {
+            "invocation_id": "e-9ed9ff74-cc85-4d35-9b93-be2704de6758",
+            "user_content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "How do we run interview copilots and candidate sourcing?",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From your permitted domains, the brain found results in: finserv-ai-engineering.",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "invocation_events": [
+                {
+                  "author": "brain_agent",
+                  "content": {
+                    "parts": [
+                      {
+                        "media_resolution": null,
+                        "code_execution_result": null,
+                        "executable_code": null,
+                        "file_data": null,
+                        "function_call": {
+                          "id": "adk-e446b633-3ffc-4c64-b53d-8bd38f82ffd9",
+                          "args": {
+                            "query": "How do we run interview copilots and candidate sourcing?"
+                          },
+                          "name": "search",
+                          "partial_args": null,
+                          "will_continue": null
+                        },
+                        "function_response": null,
+                        "inline_data": null,
+                        "text": null,
+                        "thought": null,
+                        "thought_signature": null,
+                        "video_metadata": null,
+                        "tool_call": null,
+                        "tool_response": null,
+                        "part_metadata": null
+                      }
+                    ],
+                    "role": "model"
+                  }
+                },
+                {
+                  "author": "brain_agent",
+                  "content": {
+                    "parts": [
+                      {
+                        "media_resolution": null,
+                        "code_execution_result": null,
+                        "executable_code": null,
+                        "file_data": null,
+                        "function_call": null,
+                        "function_response": {
+                          "will_continue": null,
+                          "scheduling": null,
+                          "parts": null,
+                          "id": "adk-e446b633-3ffc-4c64-b53d-8bd38f82ffd9",
+                          "name": "search",
+                          "response": {
+                            "result": "[finserv-ai-engineering] Retrieval-augmented generation for trade surveillance :: Evaluation\n[finserv-ai-engineering] Real-time fraud detection with streaming features :: Real-time fraud detection with streaming features\n[finserv-ai-engineering] Model risk governance for LLMs :: Model risk governance for LLMs\n[finserv-ai-engineering] Model risk governance for LLMs :: Monitoring\n[finserv-ai-engineering] Feature stores for real-time ML in banking :: Keeping features in-tenancy\n[finserv-ai-engineering] AI engineering for financial services, overview :: AI engineering for financial services\n[finserv-ai-engineering] In-tenancy vector search and embeddings :: Why this matters across the domain"
+                          }
+                        },
+                        "inline_data": null,
+                        "text": null,
+                        "thought": null,
+                        "thought_signature": null,
+                        "video_metadata": null,
+                        "tool_call": null,
+                        "tool_response": null,
+                        "part_metadata": null
+                      }
+                    ],
+                    "role": "user"
+                  }
+                }
+              ]
+            },
+            "creation_timestamp": 1783085438.956555,
+            "rubrics": null,
+            "app_details": {
+              "agent_details": {
+                "brain_agent": {
+                  "name": "brain_agent",
+                  "instructions": "You are the hyper-brain assistant. Answer questions using ONLY the brain's tools (search, answer, get_document). Always call a tool before answering; never answer from your own memory. You can only see the caller's permitted domains, so if the tools return nothing relevant, say so honestly rather than guessing, and never claim knowledge the tools did not return. Cite the documents you used.\n\nYou are an agent. Your internal name is \"brain_agent\".",
+                  "tool_declarations": [
+                    {
+                      "retrieval": null,
+                      "computer_use": null,
+                      "file_search": null,
+                      "google_search": null,
+                      "google_maps": null,
+                      "code_execution": null,
+                      "enterprise_web_search": null,
+                      "function_declarations": [
+                        {
+                          "description": "Search the brain for a question. Returns ranked hits scoped to your domains.\n\nArgs:\n    query: The natural-language question to search for.",
+                          "name": "search",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "query": {
+                                "title": "Query",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "query"
+                            ],
+                            "title": "searchParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "Answer a question from the brain, with citations, scoped to your domains.\n\nArgs:\n    query: The natural-language question to answer.",
+                          "name": "answer",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "query": {
+                                "title": "Query",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "query"
+                            ],
+                            "title": "answerParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "Fetch one document by id, if it is in a domain you may see.\n\nArgs:\n    doc_id: The document id, for example ``finserv-ai-engineering/realtime-fraud-detection``.",
+                          "name": "get_document",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "doc_id": {
+                                "title": "Doc Id",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "doc_id"
+                            ],
+                            "title": "get_documentParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "List the knowledge domains you are permitted to retrieve from.",
+                          "name": "list_domains",
+                          "parameters": null,
+                          "parameters_json_schema": null,
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        }
+                      ],
+                      "google_search_retrieval": null,
+                      "parallel_ai_search": null,
+                      "url_context": null,
+                      "mcp_servers": null
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "expected_invocation": {
+            "invocation_id": "da561bd5-c81e-462a-99df-fbb6022a745b",
+            "user_content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "How do we run interview copilots and candidate sourcing?",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From your permitted domains, the brain found results in: finserv-ai-engineering.",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "tool_uses": [
+                {
+                  "id": null,
+                  "args": {
+                    "query": "How do we run interview copilots and candidate sourcing?"
+                  },
+                  "name": "search",
+                  "partial_args": null,
+                  "will_continue": null
+                }
+              ],
+              "tool_responses": [],
+              "intermediate_responses": []
+            },
+            "creation_timestamp": 1783085384.8973858,
+            "rubrics": null,
+            "app_details": null
+          },
+          "eval_metric_results": [
+            {
+              "metric_name": "tool_trajectory_avg_score",
+              "threshold": 1.0,
+              "criterion": {
+                "threshold": 1.0,
+                "include_intermediate_responses_in_final": false
+              },
+              "custom_function_path": null,
+              "score": 1.0,
+              "eval_status": 1,
+              "details": {
+                "rubric_scores": null
+              }
+            },
+            {
+              "metric_name": "response_match_score",
+              "threshold": 0.7,
+              "criterion": {
+                "threshold": 0.7,
+                "include_intermediate_responses_in_final": false
+              },
+              "custom_function_path": null,
+              "score": 1.0,
+              "eval_status": 1,
+              "details": {
+                "rubric_scores": null
+              }
+            }
+          ]
+        }
+      ],
+      "session_id": "___eval___session___cee58ace-7f84-44c7-a5d9-ef9af1630b02",
+      "session_details": null,
+      "user_id": "test_user_id"
+    }
+  ],
+  "creation_timestamp": 1783085438.971304
+}

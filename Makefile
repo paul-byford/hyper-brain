@@ -5,6 +5,8 @@
 VENV := .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
+TF := terraform
+PROFILE ?= personal
 
 .DEFAULT_GOAL := help
 
@@ -51,10 +53,33 @@ ingest: ## Ingest configured sources into the corpus (offline, idempotent)
 index: ## Build a local index artefact from the starter corpus
 	$(PY) -m brain_app.indexer.build --corpus corpus --out .brain/index.json
 
-# Provisioning targets (implemented in phases 4 and 5; see IMPLEMENTATION-PLAN.md).
-.PHONY: up down
-up down: ## Provision / tear down (not yet implemented)
-	@echo "Not implemented yet. See IMPLEMENTATION-PLAN.md phases 4-5 (the ./brain entrypoint)."
+# --- Infrastructure (phase 5). The one-command `brain` wrapper is phase 6. ---
+
+.PHONY: infra-validate
+infra-validate: ## Validate Terraform config (offline, no cloud)
+	$(TF) -chdir=infra fmt -check -recursive
+	$(TF) -chdir=infra init -backend=false -input=false
+	$(TF) -chdir=infra validate
+	$(TF) -chdir=infra/bootstrap init -backend=false -input=false
+	$(TF) -chdir=infra/bootstrap validate
+
+.PHONY: infra-policy
+infra-policy: ## Run infra policy-as-code (checkov + conftest, no cloud)
+	checkov -d infra --quiet --compact
+	conftest test $$(find infra -name '*.tf') -p infra/policy/security.rego
+	conftest test $$(find infra -name '*.tf') --combine --namespace controlled -p infra/policy/controlled.rego
+
+# up / down apply the profile live. They assume you have bootstrapped the state
+# bucket and run `terraform -chdir=infra init -backend-config=bucket=<name>`, and
+# are authenticated (see infra/README.md). The `brain` entrypoint (phase 6)
+# automates the whole flow; these are the raw Terraform aliases.
+.PHONY: up
+up: ## Provision the $(PROFILE) stack (needs gcloud auth + a state bucket)
+	$(TF) -chdir=infra apply -var-file=../config/$(PROFILE).tfvars
+
+.PHONY: down
+down: ## Tear down the $(PROFILE) stack
+	$(TF) -chdir=infra destroy -var-file=../config/$(PROFILE).tfvars
 
 .PHONY: clean
 clean: ## Remove build and cache artefacts

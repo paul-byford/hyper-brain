@@ -18,15 +18,16 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install
-        # Include the [mcp] serving extra so the MCP server + auth tests run here
-        # rather than skipping (phase 3).
-        run: pip install -e ./app[dev,mcp]
+        # Include the serving [mcp] and agent extras so the MCP server, auth, and
+        # deterministic agent tests all run here (phases 3-4). The slower ADK ROUGE
+        # evals are marked `eval` and run in the Pillar 3 job instead.
+        run: pip install -e ./app[dev,mcp,agent]
       - name: Lint
         run: |
           ruff check app
           ruff format --check app
       - name: Unit and integration tests
-        run: pytest app/tests -q
+        run: pytest app/tests -q -m "not eval"
 
   security:
     name: Pillar 2 - security
@@ -48,25 +49,33 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Infrastructure policy-as-code. Runs only once Terraform exists (phase 4),
-      # so CI stays green on the pre-infra skeleton.
-      - name: Terraform present?
-        id: tf
+      # Infrastructure: validate + policy-as-code (phase 5). All of this runs with
+      # no cloud: fmt/validate check the config against the provider schema, and
+      # checkov + conftest assert the security properties statically.
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: Terraform fmt & validate
         run: |
-          if [ -n "$(find infra -name '*.tf' 2>/dev/null)" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
+          terraform -chdir=infra fmt -check -recursive
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+          terraform -chdir=infra/bootstrap init -backend=false -input=false
+          terraform -chdir=infra/bootstrap validate
       - name: Checkov (infra policy)
-        if: steps.tf.outputs.present == 'true'
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: infra
       - name: Conftest (custom policy)
-        if: steps.tf.outputs.present == 'true'
         run: |
-          echo "conftest policy checks run here once infra and policy/ exist"
+          CF=0.56.0
+          curl -fsSL -o conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CF}/conftest_${CF}_Linux_x86_64.tar.gz"
+          tar xzf conftest.tar.gz conftest
+          TF_FILES=$(find infra -name '*.tf')
+          ./conftest test $TF_FILES -p infra/policy/security.rego
+          ./conftest test $TF_FILES --combine --namespace controlled -p infra/policy/controlled.rego
 
   evals:
     name: Pillar 3 - AI evals (offline tier)
@@ -77,6 +86,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install
-        run: pip install -e ./app[dev]
+        # The agent extra provides ADK's eval framework for the offline eval tier.
+        run: pip install -e ./app[dev,agent]
       - name: Offline evals
         run: pytest app/tests -q -m eval

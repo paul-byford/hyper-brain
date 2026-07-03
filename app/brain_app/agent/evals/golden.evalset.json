@@ -1,0 +1,78 @@
+{
+  "eval_set_id": "golden",
+  "name": "golden",
+  "eval_cases": [
+    {
+      "eval_id": "golden",
+      "conversation": [
+        {
+          "invocation_id": "642840ad-1499-4f48-a646-8ea9f7596431",
+          "user_content": {
+            "parts": [
+              {
+                "text": "How do we detect fraud in real time?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "From your permitted domains, the brain found results in: finserv-ai-engineering."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "query": "How do we detect fraud in real time?"
+                },
+                "name": "search"
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "creation_timestamp": 1783085384.8899002
+        },
+        {
+          "invocation_id": "7096dd76-b73e-4ac5-abba-7a8a2cd4ec13",
+          "user_content": {
+            "parts": [
+              {
+                "text": "What is in-tenancy vector search?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "From your permitted domains, the brain found results in: finserv-ai-engineering."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "args": {
+                  "query": "What is in-tenancy vector search?"
+                },
+                "name": "search"
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "creation_timestamp": 1783085384.8899572
+        }
+      ],
+      "creation_timestamp": 1783085384.8899639,
+      "final_session_state": {}
+    }
+  ],
+  "creation_timestamp": 1783085384.8899715
+}

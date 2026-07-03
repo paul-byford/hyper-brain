@@ -64,9 +64,13 @@ class BrainIndex:
         }
 
     def save(self, path: str | Path) -> None:
+        payload = json.dumps(self.to_dict())
+        if _is_gcs(path):
+            _gcs_write_text(str(path), payload)
+            return
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict()), encoding="utf-8")
+        path.write_text(payload, encoding="utf-8")
 
     @classmethod
     def from_dict(cls, data: dict) -> BrainIndex:
@@ -87,4 +91,30 @@ class BrainIndex:
 
     @classmethod
     def load(cls, path: str | Path) -> BrainIndex:
-        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+        text = _gcs_read_text(str(path)) if _is_gcs(path) else Path(path).read_text("utf-8")
+        return cls.from_dict(json.loads(text))
+
+
+def _is_gcs(path: str | Path) -> bool:
+    return str(path).startswith("gs://")
+
+
+def _split_gcs(uri: str) -> tuple[str, str]:
+    bucket, _, blob = uri[len("gs://") :].partition("/")
+    return bucket, blob
+
+
+def _gcs_read_text(uri: str) -> str:
+    # Lazy import: the offline core never needs the cloud storage client. In
+    # production the scale-to-zero container loads the index from its bucket here.
+    from google.cloud import storage
+
+    bucket, blob = _split_gcs(uri)
+    return storage.Client().bucket(bucket).blob(blob).download_as_text()
+
+
+def _gcs_write_text(uri: str, text: str) -> None:
+    from google.cloud import storage
+
+    bucket, blob = _split_gcs(uri)
+    storage.Client().bucket(bucket).blob(blob).upload_from_string(text)

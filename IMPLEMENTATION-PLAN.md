@@ -79,7 +79,7 @@ hyper-brain/
     preflight.sh                # honest-prerequisites gate
 ```
 
-## Phase 0: repository signals
+## Phase 0: repository setup
 
 Establish the project surface first: `README.md`, `LICENSE`
 (Apache-2.0), `CONTRIBUTING.md`, `CODEOWNERS`, `.editorconfig`, `.gitignore`, and
@@ -172,7 +172,7 @@ data" real before any serving exists. Implements the batch-ingestion path from
 - Exit criterion: `adk web` chats with the agent against the local brain; `adk
   eval` / pytest passes the golden set and the isolation eval.
 
-## Phase 5: infrastructure as Terraform (2 to 3 days)
+## Phase 5: infrastructure as Terraform
 
 - `bootstrap/`: create-if-not-exists state bucket.
 - `modules/`: storage, registry, run_service (brain, agent, ui), run_job, iam,
@@ -216,7 +216,7 @@ data" real before any serving exists. Implements the batch-ingestion path from
 - Exit criterion: an evaluator can, in a browser, see the graph, run a query,
   read a cited answer, and watch isolation change as identity changes.
 
-## Phase 8: observability, corpus and docs (1 day)
+## Phase 8: observability, corpus and docs
 
 - `modules/observability/`: enable Cloud Trace, Monitoring and Logging; confirm
   agent and brain spans appear; document the trace-viewer walkthrough.
@@ -228,7 +228,7 @@ data" real before any serving exists. Implements the batch-ingestion path from
 - Finish `README.md` quickstart, `config/profiles.md`, and confirm the "what this
   is and is not" section (`ARCHITECTURE.md` section 14).
 
-## Phase 9: verification pass (half a day)
+## Phase 9: verification pass
 
 - Confirm the "facts to verify" list (`ARCHITECTURE.md` section 16) against live
   documentation and adjust model names, product names post-rebrand, pricing and

@@ -81,10 +81,14 @@ This repository is being built in the phases described in
   (local, web and git adapters, markdown/HTML parsers, provenance stamping,
   idempotent landing); the MCP serving layer with OIDC-style token auth,
   server-side domain-ACL enforcement, and the gated `propose_document` write path
-  that lands proposals as a reviewable branch; the two starter corpora and the
-  full test suite. All of it runs with no cloud and no cost.
-- **In progress:** the Google ADK agent and evals, the Terraform, the one-command
-  entrypoint, and the Brain Explorer UI.
+  that lands proposals as a reviewable branch; the Google ADK demo agent with its
+  free, offline eval tier (tool-trajectory and ROUGE metrics, plus an isolation
+  eval); the Terraform for both profiles (Cloud Run, buckets, IAM, Artifact
+  Registry, Vertex enablement, and the controlled-only VPC-SC perimeter and
+  Workforce Identity behind toggles) with checkov + conftest policy-as-code; the
+  two starter corpora and the full test suite. All of it runs, and is validated in
+  CI, with no cloud and no cost.
+- **In progress:** the one-command `brain` entrypoint and the Brain Explorer UI.
 
 The `brain up` experience above is the target; today you can build and query the
 brain locally (see below).
@@ -183,6 +187,30 @@ and filters every result to those domains. A read-only token cannot use the
 write. In production the same server verifies Google-signed OIDC tokens instead
 (set `BRAIN_AUTH=google`); see [`.env.example`](.env.example) for all auth
 settings. The full list of variables and defaults lives there too.
+
+### Run the demo agent and its evals (optional)
+
+The repository ships a Google ADK agent whose tools are the brain's tools, so you
+can prove the whole path, not just the endpoint. It needs the `agent` extra.
+
+```powershell
+pip install -e ".\app[agent]"
+
+# Chat with the agent in ADK's dev web UI (offline by default: a deterministic
+# model and the brain tools bound in-process, no cloud).
+adk web app/brain_app
+
+# Run the free, offline eval tier (tool-trajectory + ROUGE, plus an isolation eval)
+python -m pytest app/tests -q -m eval
+```
+
+By default the agent runs **offline**: a deterministic fake model with the brain
+tools bound in-process, scoped to one domain, so `adk web` and the evals work with
+no cloud and no cost. For the real thing, set `BRAIN_AGENT_MODE=live` to run a
+**Gemini model on Vertex** with the tools attached over MCP with a bearer token
+(needs a running brain server, a token, and Vertex credentials); see
+[`.env.example`](.env.example). The eval datasets and thresholds live in
+[`app/brain_app/agent/evals/`](app/brain_app/agent/evals/).
 
 ### Steps (macOS or Linux, using make)
 

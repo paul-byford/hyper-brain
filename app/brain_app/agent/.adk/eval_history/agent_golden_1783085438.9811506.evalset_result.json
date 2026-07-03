@@ -1,0 +1,666 @@
+{
+  "eval_set_result_id": "agent_golden_1783085438.9811506",
+  "eval_set_result_name": "agent_golden_1783085438.9811506",
+  "eval_set_id": "golden",
+  "eval_case_results": [
+    {
+      "eval_set_file": "golden",
+      "eval_set_id": "golden",
+      "eval_id": "golden",
+      "final_eval_status": 1,
+      "eval_metric_results": null,
+      "overall_eval_metric_results": [
+        {
+          "metric_name": "tool_trajectory_avg_score",
+          "threshold": 1.0,
+          "criterion": {
+            "threshold": 1.0,
+            "include_intermediate_responses_in_final": false
+          },
+          "custom_function_path": null,
+          "score": 1.0,
+          "eval_status": 1,
+          "details": {
+            "rubric_scores": null
+          }
+        },
+        {
+          "metric_name": "response_match_score",
+          "threshold": 0.7,
+          "criterion": {
+            "threshold": 0.7,
+            "include_intermediate_responses_in_final": false
+          },
+          "custom_function_path": null,
+          "score": 1.0,
+          "eval_status": 1,
+          "details": {
+            "rubric_scores": null
+          }
+        }
+      ],
+      "eval_metric_result_per_invocation": [
+        {
+          "actual_invocation": {
+            "invocation_id": "e-ab6aa606-cafb-439e-af77-1e5e1ac280de",
+            "user_content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "How do we detect fraud in real time?",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From your permitted domains, the brain found results in: finserv-ai-engineering.",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "invocation_events": [
+                {
+                  "author": "brain_agent",
+                  "content": {
+                    "parts": [
+                      {
+                        "media_resolution": null,
+                        "code_execution_result": null,
+                        "executable_code": null,
+                        "file_data": null,
+                        "function_call": {
+                          "id": "adk-5b7c93b3-4ce9-4def-b95c-897fc2e01c21",
+                          "args": {
+                            "query": "How do we detect fraud in real time?"
+                          },
+                          "name": "search",
+                          "partial_args": null,
+                          "will_continue": null
+                        },
+                        "function_response": null,
+                        "inline_data": null,
+                        "text": null,
+                        "thought": null,
+                        "thought_signature": null,
+                        "video_metadata": null,
+                        "tool_call": null,
+                        "tool_response": null,
+                        "part_metadata": null
+                      }
+                    ],
+                    "role": "model"
+                  }
+                },
+                {
+                  "author": "brain_agent",
+                  "content": {
+                    "parts": [
+                      {
+                        "media_resolution": null,
+                        "code_execution_result": null,
+                        "executable_code": null,
+                        "file_data": null,
+                        "function_call": null,
+                        "function_response": {
+                          "will_continue": null,
+                          "scheduling": null,
+                          "parts": null,
+                          "id": "adk-5b7c93b3-4ce9-4def-b95c-897fc2e01c21",
+                          "name": "search",
+                          "response": {
+                            "result": "[finserv-ai-engineering] AI engineering for financial services, overview :: Where to start\n[finserv-ai-engineering] Real-time fraud detection with streaming features :: Feature freshness\n[finserv-ai-engineering] Model risk governance for LLMs :: Monitoring\n[finserv-ai-engineering] Feature stores for real-time ML in banking :: Freshness and point-in-time correctness\n[finserv-ai-engineering] Retrieval-augmented generation for trade surveillance :: Why grounding matters here\n[finserv-ai-engineering] In-tenancy vector search and embeddings :: Where the index rests"
+                          }
+                        },
+                        "inline_data": null,
+                        "text": null,
+                        "thought": null,
+                        "thought_signature": null,
+                        "video_metadata": null,
+                        "tool_call": null,
+                        "tool_response": null,
+                        "part_metadata": null
+                      }
+                    ],
+                    "role": "user"
+                  }
+                }
+              ]
+            },
+            "creation_timestamp": 1783085438.9080875,
+            "rubrics": null,
+            "app_details": {
+              "agent_details": {
+                "brain_agent": {
+                  "name": "brain_agent",
+                  "instructions": "You are the hyper-brain assistant. Answer questions using ONLY the brain's tools (search, answer, get_document). Always call a tool before answering; never answer from your own memory. You can only see the caller's permitted domains, so if the tools return nothing relevant, say so honestly rather than guessing, and never claim knowledge the tools did not return. Cite the documents you used.\n\nYou are an agent. Your internal name is \"brain_agent\".",
+                  "tool_declarations": [
+                    {
+                      "retrieval": null,
+                      "computer_use": null,
+                      "file_search": null,
+                      "google_search": null,
+                      "google_maps": null,
+                      "code_execution": null,
+                      "enterprise_web_search": null,
+                      "function_declarations": [
+                        {
+                          "description": "Search the brain for a question. Returns ranked hits scoped to your domains.\n\nArgs:\n    query: The natural-language question to search for.",
+                          "name": "search",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "query": {
+                                "title": "Query",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "query"
+                            ],
+                            "title": "searchParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "Answer a question from the brain, with citations, scoped to your domains.\n\nArgs:\n    query: The natural-language question to answer.",
+                          "name": "answer",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "query": {
+                                "title": "Query",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "query"
+                            ],
+                            "title": "answerParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "Fetch one document by id, if it is in a domain you may see.\n\nArgs:\n    doc_id: The document id, for example ``finserv-ai-engineering/realtime-fraud-detection``.",
+                          "name": "get_document",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "doc_id": {
+                                "title": "Doc Id",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "doc_id"
+                            ],
+                            "title": "get_documentParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "List the knowledge domains you are permitted to retrieve from.",
+                          "name": "list_domains",
+                          "parameters": null,
+                          "parameters_json_schema": null,
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        }
+                      ],
+                      "google_search_retrieval": null,
+                      "parallel_ai_search": null,
+                      "url_context": null,
+                      "mcp_servers": null
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "expected_invocation": {
+            "invocation_id": "642840ad-1499-4f48-a646-8ea9f7596431",
+            "user_content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "How do we detect fraud in real time?",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From your permitted domains, the brain found results in: finserv-ai-engineering.",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "tool_uses": [
+                {
+                  "id": null,
+                  "args": {
+                    "query": "How do we detect fraud in real time?"
+                  },
+                  "name": "search",
+                  "partial_args": null,
+                  "will_continue": null
+                }
+              ],
+              "tool_responses": [],
+              "intermediate_responses": []
+            },
+            "creation_timestamp": 1783085384.8899002,
+            "rubrics": null,
+            "app_details": null
+          },
+          "eval_metric_results": [
+            {
+              "metric_name": "tool_trajectory_avg_score",
+              "threshold": 1.0,
+              "criterion": {
+                "threshold": 1.0,
+                "include_intermediate_responses_in_final": false
+              },
+              "custom_function_path": null,
+              "score": 1.0,
+              "eval_status": 1,
+              "details": {
+                "rubric_scores": null
+              }
+            },
+            {
+              "metric_name": "response_match_score",
+              "threshold": 0.7,
+              "criterion": {
+                "threshold": 0.7,
+                "include_intermediate_responses_in_final": false
+              },
+              "custom_function_path": null,
+              "score": 1.0,
+              "eval_status": 1,
+              "details": {
+                "rubric_scores": null
+              }
+            }
+          ]
+        },
+        {
+          "actual_invocation": {
+            "invocation_id": "e-7a14351c-fd34-48a8-9dd0-8d81bc39675b",
+            "user_content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "What is in-tenancy vector search?",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From your permitted domains, the brain found results in: finserv-ai-engineering.",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "invocation_events": [
+                {
+                  "author": "brain_agent",
+                  "content": {
+                    "parts": [
+                      {
+                        "media_resolution": null,
+                        "code_execution_result": null,
+                        "executable_code": null,
+                        "file_data": null,
+                        "function_call": {
+                          "id": "adk-c978265f-dfa0-4c4d-8d03-af13aa57b3b5",
+                          "args": {
+                            "query": "What is in-tenancy vector search?"
+                          },
+                          "name": "search",
+                          "partial_args": null,
+                          "will_continue": null
+                        },
+                        "function_response": null,
+                        "inline_data": null,
+                        "text": null,
+                        "thought": null,
+                        "thought_signature": null,
+                        "video_metadata": null,
+                        "tool_call": null,
+                        "tool_response": null,
+                        "part_metadata": null
+                      }
+                    ],
+                    "role": "model"
+                  }
+                },
+                {
+                  "author": "brain_agent",
+                  "content": {
+                    "parts": [
+                      {
+                        "media_resolution": null,
+                        "code_execution_result": null,
+                        "executable_code": null,
+                        "file_data": null,
+                        "function_call": null,
+                        "function_response": {
+                          "will_continue": null,
+                          "scheduling": null,
+                          "parts": null,
+                          "id": "adk-c978265f-dfa0-4c4d-8d03-af13aa57b3b5",
+                          "name": "search",
+                          "response": {
+                            "result": "[finserv-ai-engineering] Retrieval-augmented generation for trade surveillance :: Why grounding matters here\n[finserv-ai-engineering] Real-time fraud detection with streaming features :: Governance and drift\n[finserv-ai-engineering] Feature stores for real-time ML in banking :: Keeping features in-tenancy\n[finserv-ai-engineering] AI engineering for financial services, overview :: Where to start\n[finserv-ai-engineering] AI engineering for financial services, overview :: The through-line\n[finserv-ai-engineering] In-tenancy vector search and embeddings :: In-tenancy vector search and embeddings\n[finserv-ai-engineering] Model risk governance for LLMs :: What changes with LLMs"
+                          }
+                        },
+                        "inline_data": null,
+                        "text": null,
+                        "thought": null,
+                        "thought_signature": null,
+                        "video_metadata": null,
+                        "tool_call": null,
+                        "tool_response": null,
+                        "part_metadata": null
+                      }
+                    ],
+                    "role": "user"
+                  }
+                }
+              ]
+            },
+            "creation_timestamp": 1783085438.9307725,
+            "rubrics": null,
+            "app_details": {
+              "agent_details": {
+                "brain_agent": {
+                  "name": "brain_agent",
+                  "instructions": "You are the hyper-brain assistant. Answer questions using ONLY the brain's tools (search, answer, get_document). Always call a tool before answering; never answer from your own memory. You can only see the caller's permitted domains, so if the tools return nothing relevant, say so honestly rather than guessing, and never claim knowledge the tools did not return. Cite the documents you used.\n\nYou are an agent. Your internal name is \"brain_agent\".",
+                  "tool_declarations": [
+                    {
+                      "retrieval": null,
+                      "computer_use": null,
+                      "file_search": null,
+                      "google_search": null,
+                      "google_maps": null,
+                      "code_execution": null,
+                      "enterprise_web_search": null,
+                      "function_declarations": [
+                        {
+                          "description": "Search the brain for a question. Returns ranked hits scoped to your domains.\n\nArgs:\n    query: The natural-language question to search for.",
+                          "name": "search",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "query": {
+                                "title": "Query",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "query"
+                            ],
+                            "title": "searchParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "Answer a question from the brain, with citations, scoped to your domains.\n\nArgs:\n    query: The natural-language question to answer.",
+                          "name": "answer",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "query": {
+                                "title": "Query",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "query"
+                            ],
+                            "title": "answerParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "Fetch one document by id, if it is in a domain you may see.\n\nArgs:\n    doc_id: The document id, for example ``finserv-ai-engineering/realtime-fraud-detection``.",
+                          "name": "get_document",
+                          "parameters": null,
+                          "parameters_json_schema": {
+                            "properties": {
+                              "doc_id": {
+                                "title": "Doc Id",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "doc_id"
+                            ],
+                            "title": "get_documentParams",
+                            "type": "object"
+                          },
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        },
+                        {
+                          "description": "List the knowledge domains you are permitted to retrieve from.",
+                          "name": "list_domains",
+                          "parameters": null,
+                          "parameters_json_schema": null,
+                          "response": null,
+                          "response_json_schema": null,
+                          "behavior": null
+                        }
+                      ],
+                      "google_search_retrieval": null,
+                      "parallel_ai_search": null,
+                      "url_context": null,
+                      "mcp_servers": null
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "expected_invocation": {
+            "invocation_id": "7096dd76-b73e-4ac5-abba-7a8a2cd4ec13",
+            "user_content": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "What is in-tenancy vector search?",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "media_resolution": null,
+                  "code_execution_result": null,
+                  "executable_code": null,
+                  "file_data": null,
+                  "function_call": null,
+                  "function_response": null,
+                  "inline_data": null,
+                  "text": "From your permitted domains, the brain found results in: finserv-ai-engineering.",
+                  "thought": null,
+                  "thought_signature": null,
+                  "video_metadata": null,
+                  "tool_call": null,
+                  "tool_response": null,
+                  "part_metadata": null
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "tool_uses": [
+                {
+                  "id": null,
+                  "args": {
+                    "query": "What is in-tenancy vector search?"
+                  },
+                  "name": "search",
+                  "partial_args": null,
+                  "will_continue": null
+                }
+              ],
+              "tool_responses": [],
+              "intermediate_responses": []
+            },
+            "creation_timestamp": 1783085384.8899572,
+            "rubrics": null,
+            "app_details": null
+          },
+          "eval_metric_results": [
+            {
+              "metric_name": "tool_trajectory_avg_score",
+              "threshold": 1.0,
+              "criterion": {
+                "threshold": 1.0,
+                "include_intermediate_responses_in_final": false
+              },
+              "custom_function_path": null,
+              "score": 1.0,
+              "eval_status": 1,
+              "details": {
+                "rubric_scores": null
+              }
+            },
+            {
+              "metric_name": "response_match_score",
+              "threshold": 0.7,
+              "criterion": {
+                "threshold": 0.7,
+                "include_intermediate_responses_in_final": false
+              },
+              "custom_function_path": null,
+              "score": 1.0,
+              "eval_status": 1,
+              "details": {
+                "rubric_scores": null
+              }
+            }
+          ]
+        }
+      ],
+      "session_id": "___eval___session___4d197851-bd46-46a9-ad9e-5e9e51fceb97",
+      "session_details": null,
+      "user_id": "test_user_id"
+    }
+  ],
+  "creation_timestamp": 1783085438.9811506
+}
