@@ -21,7 +21,10 @@ Homepage = "https://github.com/paul-byford/"
 # Cloud adapters and serving, wired in later phases. Kept optional so the
 # offline core installs with no heavy or cloud dependencies.
 vertex = ["google-cloud-aiplatform>=1.60"]
-mcp = ["mcp>=1.2"]
+# Serving: the MCP server plus real Google OIDC token verification. The offline
+# core and the personal demo verify HS256 tokens with the standard library, so
+# google-auth is only needed to verify production Google-signed ID tokens.
+mcp = ["mcp>=1.2", "google-auth>=2.30"]
 agent = ["google-adk>=0.2"]
 dev = [
   "pytest>=8.0",

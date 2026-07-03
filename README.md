@@ -77,12 +77,14 @@ This repository is being built in the phases described in
 
 - **Implemented:** the offline retrieval core (chunking, `[[wikilink]]` graph,
   hybrid semantic + keyword + link retrieval with reciprocal-rank fusion, `search`
-  and `answer` modes, per-domain isolation), the two starter corpora, and the
-  test suite. Runs with no cloud and no cost.
-- **In progress:** the adapter-based ingestion pipeline and the agent
-  `propose_document` write path, the MCP serving layer and OIDC auth, the Google
-  ADK agent and evals, the Terraform, the one-command entrypoint, and the Brain
-  Explorer UI.
+  and `answer` modes, per-domain isolation); the adapter-based ingestion pipeline
+  (local, web and git adapters, markdown/HTML parsers, provenance stamping,
+  idempotent landing); the MCP serving layer with OIDC-style token auth,
+  server-side domain-ACL enforcement, and the gated `propose_document` write path
+  that lands proposals as a reviewable branch; the two starter corpora and the
+  full test suite. All of it runs with no cloud and no cost.
+- **In progress:** the Google ADK agent and evals, the Terraform, the one-command
+  entrypoint, and the Brain Explorer UI.
 
 The `brain up` experience above is the target; today you can build and query the
 brain locally (see below).
@@ -146,6 +148,41 @@ directly. Run `deactivate` when you want to leave the environment.
 > `python -c "import sys; print(sys.executable)"`; the path should be under
 > `.venv\Scripts`. To stop conda adding `(base)` to every prompt, run
 > `conda config --set auto_activate_base false` once.
+
+### Add new knowledge (ingestion)
+
+Drop source files under `raw/` (or configure web/git sources in
+[`config/sources.yaml`](config/sources.yaml)) and run the ingestion pipeline. It
+converts sources to markdown, stamps provenance, and lands them under `corpus/`.
+Landing is idempotent, and the corpus diff is your review gate.
+
+```powershell
+python -m brain_app.ingest.run --sources config/sources.yaml --corpus corpus
+python -m brain_app.indexer.build --corpus corpus --out .brain/index.json   # re-index
+```
+
+### Serve the brain over MCP (optional)
+
+To expose the brain to an AI agent or MCP client (Claude Code, Cursor, the ADK
+agent), run the MCP server. This needs the `mcp` extra and a token secret; it
+still uses no cloud.
+
+```powershell
+pip install -e ".\app[mcp]"                 # adds the MCP server + auth deps
+
+# A secret for signing/verifying caller tokens (there is no unauthenticated mode).
+$env:BRAIN_AUTH_SECRET = python -c "import secrets; print(secrets.token_urlsafe(32))"
+$env:BRAIN_INDEX = ".brain/index.json"
+python -m brain_app.serving.server          # serves MCP over http://localhost:8080/mcp
+```
+
+The server verifies each caller's bearer token, resolves it to the domains that
+identity may see (from [`config/personal.policy.yaml`](config/personal.policy.yaml)),
+and filters every result to those domains. A read-only token cannot use the
+`propose_document` write tool, and proposals land as a review branch, never a live
+write. In production the same server verifies Google-signed OIDC tokens instead
+(set `BRAIN_AUTH=google`); see [`.env.example`](.env.example) for all auth
+settings. The full list of variables and defaults lives there too.
 
 ### Steps (macOS or Linux, using make)
 

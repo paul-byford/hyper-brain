@@ -13,12 +13,14 @@ jobs:
     name: Pillar 1 - functional
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install
-        run: pip install -e ./app[dev]
+        # Include the [mcp] serving extra so the MCP server + auth tests run here
+        # rather than skipping (phase 3).
+        run: pip install -e ./app[dev,mcp]
       - name: Lint
         run: |
           ruff check app
@@ -30,10 +32,10 @@ jobs:
     name: Pillar 2 - security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install
@@ -70,8 +72,8 @@ jobs:
     name: Pillar 3 - AI evals (offline tier)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install
