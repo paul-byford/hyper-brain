@@ -47,6 +47,11 @@ use. See [`config/profiles.md`](config/profiles.md) and `ARCHITECTURE.md` sectio
 
 ## Quickstart (target experience)
 
+This is the future one-command flow. The `brain` entrypoint is still being built
+(see Project status below), so to run the project **today** skip to
+[Getting started](#getting-started). The cloud prerequisites here are only needed
+for that future flow, not for running the core locally.
+
 Prerequisites: the `gcloud` and
 `terraform` CLIs, and a Google Cloud project you can use with billing enabled and
 the required APIs allowed. In a controlled environment, project creation, spend
@@ -82,13 +87,91 @@ This repository is being built in the phases described in
 The `brain up` experience above is the target; today you can build and query the
 brain locally (see below).
 
-## Run the core locally
+## Getting started
+
+Run and query the brain locally. This uses no cloud and costs nothing.
+
+### Prerequisites
+
+You need two tools. Both are free.
+
+- **Python 3.11 or newer** (developed on 3.13). This runs the application.
+  - Windows: `winget install Python.Python.3.13` in PowerShell, or download from
+    [python.org](https://www.python.org/downloads/) and tick "Add python.exe to
+    PATH" during install.
+  - Check it worked: `python --version` should print `Python 3.11` or higher.
+- **Git** (to obtain the repository, if you have not already).
+  - Windows: `winget install Git.Git`.
+  - Check: `git --version`.
+
+That is all for local use. Notes:
+
+- **`make` is not required on Windows.** `make` is a Unix build tool. The
+  `Makefile` in this repo is just a shortcut for macOS/Linux users; on Windows use
+  the PowerShell commands below, which do exactly the same thing.
+- The Google Cloud CLI (`gcloud`) and Terraform are **not** needed to run the core
+  locally. They are only for the future `brain up` cloud flow.
+
+### Steps (Windows, PowerShell)
+
+Run these from the repository root (the folder containing this README).
+
+```powershell
+# 1. Create an isolated Python environment in .venv
+python -m venv .venv
+
+# 2. Allow the activation script to run in this session, then activate the env
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
+
+# 3. Install the app and its development tools
+pip install -e ".\app[dev]"
+
+# 4. Run the full test suite (functional + security + eval pillars)
+python -m pytest app/tests -q
+
+# 5. Build a local search index from the starter corpus
+python -m brain_app.indexer.build --corpus corpus --out .brain/index.json
+```
+
+After step 2 your prompt shows `(.venv)` and you can run `pytest`, `ruff`, etc.
+directly. Run `deactivate` when you want to leave the environment.
+
+> **If you also have Anaconda or Miniconda installed**, your prompt may read
+> `(.venv) (base)`. That is normal: `(base)` is conda's default environment,
+> which it auto-activates in every shell, and `(.venv)` is this project's
+> environment layered on top. The project uses plain `venv` and `pip` (no conda),
+> and because `.venv` was activated last it takes precedence, so you are already
+> using the right Python. Confirm anytime with
+> `python -c "import sys; print(sys.executable)"`; the path should be under
+> `.venv\Scripts`. To stop conda adding `(base)` to every prompt, run
+> `conda config --set auto_activate_base false` once.
+
+### Steps (macOS or Linux, using make)
 
 ```sh
-make install        # create a virtualenv and install the app with dev tools
-make test           # run the full test suite (functional + security + eval pillars)
+make install        # create the virtualenv and install the app with dev tools
+make test           # run the full test suite
 make index          # build a local index artefact from the starter corpus
 ```
+
+`make` only wraps the same commands shown above; the Python commands from the
+Windows list also work on macOS and Linux (activate with `source
+.venv/bin/activate`).
+
+### Configuration (optional)
+
+The core runs with no configuration. Environment variables are optional overrides,
+all documented in [`.env.example`](.env.example); the most useful is
+`BRAIN_PROFILE` (`personal` by default). To try the controlled profile for one
+command in PowerShell:
+
+```powershell
+$env:BRAIN_PROFILE = "controlled"; python -m pytest app/tests -q
+```
+
+The test suite exercises `search`, `answer` and the domain-isolation boundary, so
+a green run means the brain retrieves, synthesises, and keeps domains separated.
 
 ## Testing
 

@@ -1,0 +1,30 @@
+# Domain access policy for the PERSONAL profile.
+#
+# This is the same schema the controlled profile uses; only the principals differ
+# (personal Google accounts and Groups here, the bank's federated groups there).
+# Enforcement is server-side, against a verified OIDC identity.
+version: 1
+
+# Every domain that exists in this brain. A grant can only widen access to a
+# domain named here.
+domains:
+  - finserv-ai-engineering
+  - enterprise-ai-recruitment
+
+grants:
+  # The provisioner / admins see everything. Uses a group rather than a personal
+  # identity so no real account is baked into the repo.
+  - principal: group:brain-admins@example.com
+    domains:
+      - finserv-ai-engineering
+      - enterprise-ai-recruitment
+
+  # A financial-services AI engineer sees only that domain.
+  - principal: group:finserv-eng@example.com
+    domains:
+      - finserv-ai-engineering
+
+  # A recruiter sees only the recruitment domain.
+  - principal: group:recruiting@example.com
+    domains:
+      - enterprise-ai-recruitment

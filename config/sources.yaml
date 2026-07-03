@@ -1,0 +1,40 @@
+# Ingestion sources (ARCHITECTURE.md section 12).
+#
+# Each source names an adapter `type`, the `domain` it is allowed to land in (the
+# isolation boundary the pipeline enforces; an adapter can never write outside
+# it), and adapter-specific options. Run with:
+#
+#     python -m brain_app.ingest.run          (or: make ingest)
+#
+# Landing is idempotent: re-running converges rather than duplicating. Landed
+# documents are stamped with provenance (source, source_url, fetched_at, checksum,
+# ingest_run) and land under corpus/<domain>/, so the git diff is the review gate.
+version: 1
+
+sources:
+  # Local drop, the Karpathy pattern: drop files under raw/, ingest them. This
+  # one is active by default and runs fully offline.
+  - id: raw-finserv
+    type: local
+    domain: finserv-ai-engineering
+    path: raw/finserv
+    glob: "*.md"
+    curate: false
+
+  # --- Illustrative sources (uncomment and configure to use) ---
+  #
+  # Web/URL adapter. Fetches pages and converts HTML to markdown in-process.
+  # - id: web-finserv
+  #   type: web
+  #   domain: finserv-ai-engineering
+  #   urls:
+  #     - https://example.com/some-article.html
+  #
+  # Git-repo adapter. Shallow-clones a repo and ingests its markdown, stamping the
+  # commit sha as provenance. Needs the git CLI on PATH.
+  # - id: git-recruitment
+  #   type: git
+  #   domain: enterprise-ai-recruitment
+  #   repo: https://github.com/example/notes.git
+  #   ref: main
+  #   glob: "*.md"

@@ -1,0 +1,26 @@
+# Domain access policy for the CONTROLLED profile.
+#
+# Identical schema to personal.policy.yaml. The only differences are the
+# principals: the bank's federated groups instead of personal accounts. This file
+# demonstrates that moving to the controlled environment changes configuration,
+# not code. In a real controlled deployment this policy would be sourced from the
+# organisation's control plane rather than the repo.
+version: 1
+
+domains:
+  - finserv-ai-engineering
+  - enterprise-ai-recruitment
+
+grants:
+  - principal: group:ai-platform@bank.example
+    domains:
+      - finserv-ai-engineering
+
+  - principal: group:talent-acquisition@bank.example
+    domains:
+      - enterprise-ai-recruitment
+
+  - principal: group:brain-admins@bank.example
+    domains:
+      - finserv-ai-engineering
+      - enterprise-ai-recruitment

@@ -31,6 +31,7 @@ service-account*.json
 application_default_credentials.json
 .env
 .env.*
+!.env.example
 
 # OS / editor
 .DS_Store

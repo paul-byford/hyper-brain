@@ -1,0 +1,15 @@
+# Domain registry. Each domain is an isolation boundary; a caller only retrieves
+# from domains their identity is granted in the active policy file.
+version: 1
+domains:
+  - id: finserv-ai-engineering
+    title: Modern AI engineering for financial services
+    description: >
+      Cutting-edge patterns for building AI systems in banking and capital
+      markets: retrieval, model risk governance, real-time inference, and keeping
+      sensitive data inside the tenancy.
+  - id: enterprise-ai-recruitment
+    title: Modern AI recruitment for enterprises
+    description: >
+      Applying AI across enterprise talent acquisition: sourcing and matching,
+      interview copilots, and doing it within bias, privacy and regulatory limits.

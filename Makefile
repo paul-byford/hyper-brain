@@ -43,6 +43,10 @@ security: ## Run the security pillar (SAST + dependency audit)
 	$(VENV)/bin/bandit -q -r app/brain_app
 	$(VENV)/bin/pip-audit -r app/requirements.txt || true
 
+.PHONY: ingest
+ingest: ## Ingest configured sources into the corpus (offline, idempotent)
+	$(PY) -m brain_app.ingest.run --sources config/sources.yaml --corpus corpus
+
 .PHONY: index
 index: ## Build a local index artefact from the starter corpus
 	$(PY) -m brain_app.indexer.build --corpus corpus --out .brain/index.json
