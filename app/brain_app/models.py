@@ -22,6 +22,11 @@ class Document:
     raw_links: list[str] = field(default_factory=list)
     # Resolved neighbour doc_ids, within the same domain only.
     links: list[str] = field(default_factory=list)
+    # Provenance, when the document was ingested (frontmatter stamped by the
+    # pipeline). None for hand-written corpus docs. Surfaced by the Explorer UI.
+    source: str | None = None
+    source_url: str | None = None
+    fetched_at: str | None = None
 
 
 @dataclass(frozen=True)

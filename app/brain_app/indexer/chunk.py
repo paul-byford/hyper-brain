@@ -107,8 +107,15 @@ def load_document(path: Path, domain_hint: str | None = None) -> tuple[Document,
         tags=tags,
         raw_links=extract_wikilinks(body),
         links=[],
+        source=_opt_str(meta.get("source")),
+        source_url=_opt_str(meta.get("source_url")),
+        fetched_at=_opt_str(meta.get("fetched_at")),
     )
     return document, body
+
+
+def _opt_str(value: object) -> str | None:
+    return str(value) if value not in (None, "") else None
 
 
 def build_chunks(document: Document, body: str, max_chars: int = _MAX_CHARS) -> list[Chunk]:

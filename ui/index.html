@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Brain Explorer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app">
+    <h1>Brain Explorer</h1>
+    <span class="tag">a caller only ever sees the sub-graph they may read</span>
+    <span class="spacer"></span>
+    <span class="hash" id="hash"></span>
+  </header>
+
+  <main>
+    <!-- Left: identity + domain browser -->
+    <div class="col">
+      <section class="panel" id="identity-panel">
+        <h2>Who am I &amp; what can I see</h2>
+        <select id="principal" aria-label="Act as principal"></select>
+        <div class="chips" id="allowed-domains"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Domains &amp; documents</h2>
+        <div id="browser"></div>
+      </section>
+    </div>
+
+    <!-- Center: graph + search/answer -->
+    <div class="col">
+      <section class="panel">
+        <h2>Knowledge graph</h2>
+        <svg id="graph" role="img" aria-label="Wikilink graph coloured by domain"></svg>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Search &amp; answer</h2>
+        <div class="search-row">
+          <input type="search" id="query" placeholder="Ask the brain, e.g. real-time fraud detection" />
+          <button id="search-btn">Search</button>
+        </div>
+        <div id="results"></div>
+      </section>
+    </div>
+
+    <!-- Right: document viewer + add-data -->
+    <div class="col">
+      <section class="panel" id="doc">
+        <h2>Document</h2>
+        <p class="muted">Select a document from the browser or a graph node.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Add data</h2>
+        <p class="muted">Drop files under <code class="cmd">raw/</code> (or configure
+          <code class="cmd">config/sources.yaml</code>) and run:</p>
+        <p><code class="cmd">./brain ingest</code> &nbsp;then&nbsp; <code class="cmd">./brain index</code></p>
+        <p class="muted">New knowledge lands as provenance-stamped, reviewable markdown and
+          appears here after re-indexing.</p>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

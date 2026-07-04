@@ -51,6 +51,9 @@ def resolve_links(documents: Iterable[Document]) -> list[Document]:
                 tags=doc.tags,
                 raw_links=doc.raw_links,
                 links=targets,
+                source=doc.source,
+                source_url=doc.source_url,
+                fetched_at=doc.fetched_at,
             )
         )
     return resolved
