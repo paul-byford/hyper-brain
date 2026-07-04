@@ -43,8 +43,47 @@ def get_curator(name: str | None = None) -> Curator:
     if name in ("off", "passthrough", "fake"):
         return PassthroughCurator()
     if name == "gemini":
-        raise NotImplementedError(
-            "in-tenancy Gemini curation is wired in a later cloud phase "
-            "(ARCHITECTURE.md section 12). Set BRAIN_CURATE=off for the offline core."
-        )
+        return GeminiCurator()
     raise ValueError(f"unknown curator {name!r}")
+
+
+_CURATE_INSTRUCTION = (
+    "Rewrite the following source text into a clean, well-structured markdown "
+    "article. Preserve every fact; do NOT invent anything not in the source. Use "
+    "short paragraphs and headings. Where the text clearly refers to another likely "
+    "document or concept, mark it with [[wikilink]] syntax. Return only the markdown, "
+    "no preamble.\n\nSource:\n"
+)
+
+
+class GeminiCurator:
+    """In-tenancy Gemini curation (Karpathy's raw-to-wiki): rewrite messy source
+    text into clean markdown with suggested links. Lazy google-genai import; the
+    model call is injectable so the transform is testable with no cloud. Output is
+    still provenance-stamped and passes the review gate, because an LLM rewrite can
+    introduce errors (ARCHITECTURE.md section 12)."""
+
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        project: str | None = None,
+        location: str | None = None,
+        generate=None,
+    ) -> None:
+        self.model = model or os.environ.get("BRAIN_CURATE_MODEL", "gemini-2.5-flash")
+        self.project = project or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        self.location = location or os.environ.get("GOOGLE_CLOUD_LOCATION", "europe-west2")
+        self._generate = generate
+
+    def _call(self, prompt: str) -> str:
+        if self._generate is not None:
+            return self._generate(prompt)
+        from google import genai
+
+        client = genai.Client(vertexai=True, project=self.project, location=self.location)
+        return client.models.generate_content(model=self.model, contents=prompt).text or ""
+
+    def curate(self, doc: ParsedDoc) -> ParsedDoc:
+        cleaned = self._call(_CURATE_INSTRUCTION + doc.body).strip()
+        return ParsedDoc(body=cleaned or doc.body, title=doc.title, tags=doc.tags)

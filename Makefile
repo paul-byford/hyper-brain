@@ -69,17 +69,15 @@ infra-policy: ## Run infra policy-as-code (checkov + conftest, no cloud)
 	conftest test $$(find infra -name '*.tf') -p infra/policy/security.rego
 	conftest test $$(find infra -name '*.tf') --combine --namespace controlled -p infra/policy/controlled.rego
 
-# up / down apply the profile live. They assume you have bootstrapped the state
-# bucket and run `terraform -chdir=infra init -backend-config=bucket=<name>`, and
-# are authenticated (see infra/README.md). The `brain` entrypoint (phase 6)
-# automates the whole flow; these are the raw Terraform aliases.
+# up / down delegate to the one-command entrypoint (preflight, provision, deploy,
+# seed, connect). Needs gcloud + terraform + Docker and a billing-enabled project.
 .PHONY: up
-up: ## Provision the $(PROFILE) stack (needs gcloud auth + a state bucket)
-	$(TF) -chdir=infra apply -var-file=../config/$(PROFILE).tfvars
+up: ## Provision + deploy the brain (./brain up)
+	./brain up --profile $(PROFILE)
 
 .PHONY: down
-down: ## Tear down the $(PROFILE) stack
-	$(TF) -chdir=infra destroy -var-file=../config/$(PROFILE).tfvars
+down: ## Tear everything down (./brain down)
+	./brain down --profile $(PROFILE)
 
 .PHONY: clean
 clean: ## Remove build and cache artefacts

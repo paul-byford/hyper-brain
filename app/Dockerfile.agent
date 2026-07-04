@@ -1,0 +1,27 @@
+# Image for the ADK agent service (Cloud Run). Same package as the brain, but the
+# [agent] extra (google-adk) and the ADK API server entrypoint. In live mode the
+# agent runs Gemini on Vertex and reaches the brain over MCP with an ID token it
+# mints for the brain's audience (see brain_app/agent/agent.py).
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8080 \
+    BRAIN_AGENT_MODE=live
+
+WORKDIR /app
+
+COPY pyproject.toml requirements.txt ./
+COPY brain_app ./brain_app
+# The running agent needs google-adk (LlmAgent + MCPToolset) and google-genai, not
+# the eval framework the [agent] extra pulls for local tests, so install directly
+# for a leaner, faster image.
+RUN pip install --no-cache-dir -e . "google-adk>=1.0" "google-cloud-aiplatform>=1.60"
+
+EXPOSE 8080
+
+RUN useradd --create-home --uid 1000 agent
+USER agent
+
+# ADK serves the agent package over HTTP; Cloud Run routes traffic to $PORT.
+CMD ["sh", "-c", "adk api_server brain_app --host 0.0.0.0 --port ${PORT}"]

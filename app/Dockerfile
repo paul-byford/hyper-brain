@@ -1,11 +1,10 @@
-# Minimal image for the brain MCP service (Cloud Run, scale-to-zero).
-#
-# It installs the offline core plus the [mcp] serving extra. At startup the
-# service loads the index artefact from BRAIN_INDEX (a local path or, in
-# production, a gs:// object streamed from the domain-partitioned bucket) and
-# serves MCP over streamable HTTP. OpenTelemetry span export is wired in the
-# observability phase (IMPLEMENTATION-PLAN.md phase 8); the app already keeps a
-# clean seam for it.
+# Image for the brain MCP service and the index/ingest Cloud Run Jobs (same code,
+# different entrypoint: the jobs override the container args). Installs the [mcp]
+# serving extra plus [vertex] for in-tenancy embeddings; the serving extra brings
+# google-cloud-storage (gs:// index/policy/proposals) and google-genai (Gemini
+# synthesis). At startup the service loads the index from BRAIN_INDEX (a gs://
+# object in production), verifies OIDC, and serves MCP over streamable HTTP,
+# exporting OpenTelemetry spans when BRAIN_OTEL is set.
 FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -15,10 +14,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching.
+# Install dependencies first for better layer caching. The production brain reads
+# its policy from GCS (BRAIN_POLICY), so config/ is not baked into the image.
 COPY pyproject.toml requirements.txt ./
 COPY brain_app ./brain_app
-RUN pip install --no-cache-dir -e ".[mcp]"
+RUN pip install --no-cache-dir -e ".[mcp,vertex]"
 
 # Cloud Run sends traffic to $PORT; the server binds it.
 EXPOSE 8080

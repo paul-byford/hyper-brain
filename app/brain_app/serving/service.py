@@ -9,11 +9,14 @@ dependency, so the whole security contract is testable offline.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..auth import Identity, can_propose, read_domains, writable_domains
 from ..config import Policy
 from ..embeddings.base import EmbeddingProvider
 from ..models import Answer, SearchResult
-from ..retrieval import BrainIndex, answer, search
+from ..observability import span
+from ..retrieval import BrainIndex, ExtractiveSynthesiser, Synthesiser, answer, search
 from .proposals import MemoryGate, ProposalResult, ReviewGate, build_proposal
 
 
@@ -46,42 +49,94 @@ class BrainService:
         policy: Policy,
         *,
         gate: ReviewGate | None = None,
+        synthesiser: Synthesiser | None = None,
+        policy_source: Callable[[], Policy] | None = None,
+        index_loader: Callable[[], BrainIndex] | None = None,
     ) -> None:
-        self.index = index
+        # The index can be passed directly, or loaded lazily on first use. Lazy
+        # loading lets a scale-to-zero container start (and pass its health check)
+        # before the index artefact exists in the bucket, and keeps cold start fast.
+        self._index = index
+        self._index_loader = index_loader
         self.embeddings = embeddings
         self.policy = policy
+        # Resolve the policy per request through a source, so a grant that updates a
+        # shared policy (a gs:// object) takes effect without a redeploy. Defaults to
+        # the fixed policy passed in.
+        self._policy_source = policy_source or (lambda: policy)
         # Default to the no-write MemoryGate: safe unless a real gate is wired in.
         self.gate = gate or MemoryGate()
+        # Default to deterministic extractive synthesis; production injects Gemini.
+        self.synthesiser = synthesiser or ExtractiveSynthesiser()
+
+    @property
+    def index(self) -> BrainIndex:
+        if self._index is None:
+            if self._index_loader is None:
+                raise RuntimeError("BrainService has neither an index nor an index_loader")
+            self._index = self._index_loader()
+        return self._index
 
     def _visible_domains(self, identity: Identity) -> set[str]:
         # Intersect the policy grant with domains that actually exist in the index.
-        return read_domains(identity, self.policy) & self.index.domains
+        return read_domains(identity, self._policy_source()) & self.index.domains
 
     def list_domains(self, identity: Identity) -> list[str]:
         return sorted(self._visible_domains(identity))
 
     def search(self, identity: Identity, query: str, *, top_k: int = 5) -> list[SearchResult]:
-        return search(
-            self.index, query, self._visible_domains(identity), self.embeddings, top_k=top_k
-        )
+        domains = self._visible_domains(identity)
+        with span(
+            "brain.search",
+            **{
+                "brain.domain_count": len(domains),
+                "brain.top_k": top_k,
+                "brain.principal": identity.subject,
+            },
+        ) as s:
+            results = search(self.index, query, domains, self.embeddings, top_k=top_k)
+            if s is not None:
+                s.set_attribute("brain.result_count", len(results))
+            return results
 
     def answer(self, identity: Identity, query: str, *, top_k: int = 5) -> Answer:
-        return answer(
-            self.index, query, self._visible_domains(identity), self.embeddings, top_k=top_k
-        )
+        domains = self._visible_domains(identity)
+        with span(
+            "brain.answer",
+            **{
+                "brain.domain_count": len(domains),
+                "brain.top_k": top_k,
+                "brain.principal": identity.subject,
+            },
+        ) as s:
+            result = answer(
+                self.index, query, domains, self.embeddings, self.synthesiser, top_k=top_k
+            )
+            if s is not None:
+                s.set_attribute("brain.citation_count", len(result.citations))
+                s.set_attribute("brain.gap_count", len(result.gaps))
+            return result
 
     def get_document(self, identity: Identity, doc_id: str) -> dict:
         domains = self._visible_domains(identity)
-        document = self.index.documents.get(doc_id)
-        if document is None or document.domain not in domains:
-            raise DocumentNotFound(doc_id)
+        with span(
+            "brain.get_document", **{"brain.doc_id": doc_id, "brain.principal": identity.subject}
+        ):
+            document = self.index.documents.get(doc_id)
+            if document is None or document.domain not in domains:
+                raise DocumentNotFound(doc_id)
+            return self._document_view(document)
+
+    def _document_view(self, document) -> dict:
         return {
             "doc_id": document.doc_id,
             "domain": document.domain,
             "title": document.title,
             "tags": list(document.tags),
             "links": list(document.links),
-            "text": self._reconstruct(doc_id, document.title),
+            "source": document.source,
+            "fetched_at": document.fetched_at,
+            "text": self._reconstruct(document.doc_id, document.title),
         }
 
     def _reconstruct(self, doc_id: str, title: str) -> str:
@@ -106,18 +161,22 @@ class BrainService:
         content: str,
         source_url: str | None = None,
     ) -> ProposalResult:
-        # Write scope is checked separately from read access: a read-only token,
-        # however broad its domain grant, cannot reach this path.
-        if not can_propose(identity):
-            raise WriteScopeError("token lacks the 'propose' scope")
-        # And the target domain must be one the caller is actually granted.
-        if domain not in writable_domains(identity, self.policy):
-            raise DomainNotAuthorized(domain)
-        proposal = build_proposal(
-            domain=domain,
-            title=title,
-            content=content,
-            author=identity.email or identity.subject,
-            source_url=source_url,
-        )
-        return self.gate.submit(proposal)
+        with span(
+            "brain.propose_document",
+            **{"brain.domain": domain, "brain.principal": identity.subject},
+        ):
+            # Write scope is checked separately from read access: a read-only token,
+            # however broad its domain grant, cannot reach this path.
+            if not can_propose(identity):
+                raise WriteScopeError("token lacks the 'propose' scope")
+            # And the target domain must be one the caller is actually granted.
+            if domain not in writable_domains(identity, self._policy_source()):
+                raise DomainNotAuthorized(domain)
+            proposal = build_proposal(
+                domain=domain,
+                title=title,
+                content=content,
+                author=identity.email or identity.subject,
+                source_url=source_url,
+            )
+            return self.gate.submit(proposal)

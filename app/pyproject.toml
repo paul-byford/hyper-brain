@@ -21,10 +21,20 @@ Homepage = "https://github.com/paul-byford/"
 # Cloud adapters and serving, wired in later phases. Kept optional so the
 # offline core installs with no heavy or cloud dependencies.
 vertex = ["google-cloud-aiplatform>=1.60"]
-# Serving: the MCP server plus real Google OIDC token verification. The offline
-# core and the personal demo verify HS256 tokens with the standard library, so
-# google-auth is only needed to verify production Google-signed ID tokens.
-mcp = ["mcp>=1.2", "google-auth>=2.30"]
+# Serving: the MCP server, real Google OIDC token verification, and optional
+# OpenTelemetry tracing to Cloud Trace (section 10). The offline core and the
+# personal demo need none of this; google-auth verifies production Google-signed
+# ID tokens, and the otel packages are only used when BRAIN_OTEL is set.
+mcp = [
+  "mcp>=1.2",
+  "google-auth>=2.30",
+  "opentelemetry-sdk>=1.20",
+  "opentelemetry-exporter-gcp-trace>=1.6",
+  # The deployed brain loads the index/policy from GCS and runs the in-tenancy
+  # Vertex path (Gemini synthesis via google-genai; embeddings via the vertex extra).
+  "google-cloud-storage>=2.16",
+  "google-genai>=1.0",
+]
 # The ADK demo agent and its offline eval tier. The [eval] sub-extra pulls ADK's
 # eval framework (tool_trajectory + ROUGE response_match) so the golden and
 # isolation evals run free in CI.

@@ -8,7 +8,15 @@ proposals through a review gate (proposals.py), never as a live write to main.
 
 from __future__ import annotations
 
-from .proposals import GitBranchGate, MemoryGate, Proposal, ProposalResult, ReviewGate
+from .proposals import (
+    GcsProposalGate,
+    GitBranchGate,
+    MemoryGate,
+    Proposal,
+    ProposalResult,
+    ReviewGate,
+    get_gate,
+)
 from .service import (
     AccessError,
     BrainService,
@@ -22,10 +30,12 @@ __all__ = [
     "BrainService",
     "DocumentNotFound",
     "DomainNotAuthorized",
+    "GcsProposalGate",
     "GitBranchGate",
     "MemoryGate",
     "Proposal",
     "ProposalResult",
     "ReviewGate",
     "WriteScopeError",
+    "get_gate",
 ]

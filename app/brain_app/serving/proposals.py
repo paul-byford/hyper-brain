@@ -10,6 +10,7 @@ records it without touching the filesystem (the safe default, used in tests).
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -107,6 +108,31 @@ class MemoryGate:
         )
 
 
+class GcsProposalGate:
+    """Stages a proposal as an object under a review prefix in a bucket, never in the
+    live corpus. The deployed brain has no git checkout, so this is the cloud review
+    location: a human or a promotion step reviews ``gs://<bucket>/proposals/...`` and
+    moves an approved proposal into the corpus, then re-indexes."""
+
+    def __init__(self, bucket: str, prefix: str = "proposals") -> None:
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+
+    def submit(self, proposal: Proposal) -> ProposalResult:
+        from google.cloud import storage
+
+        blob_path = f"{self.prefix}/{proposal.domain}/{proposal.slug}-{proposal.checksum[:8]}.md"
+        storage.Client().bucket(self.bucket).blob(blob_path).upload_from_string(proposal.content)
+        uri = f"gs://{self.bucket}/{blob_path}"
+        return ProposalResult(
+            status="proposed",
+            path=uri,
+            branch=None,
+            checksum=proposal.checksum,
+            detail=f"staged for review at {uri}",
+        )
+
+
 class GitBranchGate:
     """Lands a proposal on a fresh branch and returns to the original, so ``main``
     is never touched. The branch is the reviewable, revertible change."""
@@ -149,3 +175,23 @@ class GitBranchGate:
             checksum=proposal.checksum,
             detail=f"committed to review branch {branch}",
         )
+
+
+def get_gate(name: str | None = None) -> ReviewGate:
+    """Return the configured review gate.
+
+    Selected by ``BRAIN_PROPOSE_GATE``: ``git`` (default; a local branch, for the
+    dev/personal flow), ``gcs`` (a review prefix in a bucket, for the deployed
+    brain), or ``memory`` (records nothing to disk; the safe default in tests).
+    """
+    name = name or os.environ.get("BRAIN_PROPOSE_GATE", "git")
+    if name == "memory":
+        return MemoryGate()
+    if name == "git":
+        return GitBranchGate(os.environ.get("BRAIN_REPO", "."))
+    if name == "gcs":
+        bucket = os.environ.get("BRAIN_PROPOSALS_BUCKET")
+        if not bucket:
+            raise ValueError("BRAIN_PROPOSE_GATE=gcs requires BRAIN_PROPOSALS_BUCKET")
+        return GcsProposalGate(bucket)
+    raise ValueError(f"unknown proposal gate {name!r}")

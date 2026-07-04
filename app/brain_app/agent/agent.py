@@ -36,16 +36,33 @@ INSTRUCTION = (
 )
 
 
+def _brain_token(audience: str) -> str:
+    """The bearer the agent presents to the IAM-gated brain.
+
+    An explicit ``BRAIN_TOKEN`` wins (handy for local dev). Otherwise mint a Google
+    ID token for the brain's audience from the Cloud Run metadata server / ADC, so
+    the agent calls the brain service-to-service as its own service account.
+    """
+    explicit = os.environ.get("BRAIN_TOKEN")
+    if explicit:
+        return explicit
+    from google.auth.transport.requests import Request
+    from google.oauth2 import id_token
+
+    return id_token.fetch_id_token(Request(), audience)
+
+
 def _live_toolset():
     from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
     from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 
     url = os.environ.get("BRAIN_URL", "http://localhost:8080/mcp")
-    token = os.environ.get("BRAIN_TOKEN", "")
+    # The token audience must match what the brain verifies (its own service URL).
+    audience = os.environ.get("BRAIN_AUDIENCE") or url.rsplit("/mcp", 1)[0]
     return MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
             url=url,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {_brain_token(audience)}"},
         ),
         # Restrict the agent to exactly the brain's tools, nothing else.
         tool_filter=BRAIN_TOOLS,

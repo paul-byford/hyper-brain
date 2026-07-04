@@ -76,12 +76,38 @@ def load_corpus(
     return documents_by_id, chunks, adjacency, _content_hash(hash_pairs)
 
 
+def _materialise_corpus(corpus_dir: str | Path) -> str | Path:
+    """Return a local corpus path, downloading from GCS first if given a gs:// URI.
+
+    Lets the cloud index Job read the corpus bucket (source content stays
+    in-tenancy) while load_corpus stays a simple local-directory walk.
+    """
+    if not str(corpus_dir).startswith("gs://"):
+        return corpus_dir
+
+    import tempfile
+
+    from google.cloud import storage
+
+    bucket_name, _, prefix = str(corpus_dir)[len("gs://") :].partition("/")
+    client = storage.Client()
+    tmp = Path(tempfile.mkdtemp(prefix="brain-corpus-"))
+    for blob in client.list_blobs(bucket_name, prefix=prefix):
+        if blob.name.endswith("/"):
+            continue
+        rel = blob.name[len(prefix) :].lstrip("/") if prefix else blob.name
+        dest = tmp / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(str(dest))
+    return tmp
+
+
 def build_index(
     corpus_dir: str | Path,
     embeddings: EmbeddingProvider | None = None,
     provider_name: str | None = None,
 ) -> BrainIndex:
-    documents, chunks, adjacency, content_hash = load_corpus(corpus_dir)
+    documents, chunks, adjacency, content_hash = load_corpus(_materialise_corpus(corpus_dir))
     provider = embeddings or get_embeddings(provider_name)
     vectors = (
         np.asarray(provider.embed([c.text for c in chunks]), dtype=np.float32)

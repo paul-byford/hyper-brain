@@ -28,6 +28,17 @@ jobs:
           ruff format --check app
       - name: Unit and integration tests
         run: pytest app/tests -q -m "not eval"
+      # Brain Explorer UI (phase 7): export its data, then run the JS logic tests
+      # (isolation, scoped search, graph filtering) under node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: UI logic tests
+        run: |
+          python scripts/export_ui_data.py
+          node --check ui/lib.js
+          node --check ui/app.js
+          node ui/test/lib.test.mjs
 
   security:
     name: Pillar 2 - security

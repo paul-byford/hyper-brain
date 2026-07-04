@@ -12,6 +12,7 @@ same repository serves an effortless personal demo and a project that could be d
 - **Intellectual lineage** (Karpathy's LLM wiki, Garry Tan's gbrain, and what we
   keep or replace): [`docs/LINEAGE.md`](docs/LINEAGE.md)
 - **Build plan and status:** [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
+- **Tracing walkthrough:** [`docs/observability.md`](docs/observability.md)
 
 ## How it works, in one picture
 
@@ -45,26 +46,31 @@ same agent and UI, and the same isolation logic that a controlled deployment wou
 use. See [`config/profiles.md`](config/profiles.md) and `ARCHITECTURE.md` section
 3.
 
-## Quickstart (target experience)
+## Quickstart (the one command)
 
-This is the future one-command flow. The `brain` entrypoint is still being built
-(see Project status below), so to run the project **today** skip to
-[Getting started](#getting-started). The cloud prerequisites here are only needed
-for that future flow, not for running the core locally.
+The `brain` entrypoint provisions and deploys the whole stack to your own Google
+Cloud project. To just run and query the brain locally with **no cloud**, skip to
+[Getting started](#getting-started).
 
-Prerequisites: the `gcloud` and
-`terraform` CLIs, and a Google Cloud project you can use with billing enabled and
-the required APIs allowed. In a controlled environment, project creation, spend
-approval and API allow-listing are gated by your organisation; the command detects
-these and tells you exactly what to fix rather than pretending it can do them.
+Prerequisites for the cloud flow: the `gcloud` and `terraform` CLIs, Docker, and a
+Google Cloud project with billing enabled. In a controlled environment, project
+creation, spend approval and API allow-listing are gated by your organisation; the
+command's preflight **detects** these and tells you exactly what to fix rather than
+pretending it can do them.
 
 ```sh
-./brain up          # preflight, provision, seed the starter corpus, print how to connect
+./brain up          # preflight, provision, deploy, seed the index, print how to connect
 ./brain ingest      # pull configured sources (files, web, git) into the corpus
 ./brain grant alice@example.com --domains finserv-ai-engineering
 ./brain connect     # prints the MCP config block for your agent
 ./brain down        # clean teardown
 ```
+
+On Windows, use the PowerShell entrypoint with the same subcommands, for example
+`.\brain.ps1 up -Project my-project`. Re-running `brain up` is idempotent
+(Terraform converges, the state bucket bootstrap is create-if-not-exists, the index
+upserts by hash). The local subcommands (`index`, `ingest`, `eval`, `agent`,
+`connect`, `status`) need no cloud and work today.
 
 New knowledge is added through adapters (`config/sources.yaml`) or by an agent's
 gated `propose_document` tool, and always lands as reviewable, provenance-stamped
@@ -86,9 +92,14 @@ This repository is being built in the phases described in
   eval); the Terraform for both profiles (Cloud Run, buckets, IAM, Artifact
   Registry, Vertex enablement, and the controlled-only VPC-SC perimeter and
   Workforce Identity behind toggles) with checkov + conftest policy-as-code; the
-  two starter corpora and the full test suite. All of it runs, and is validated in
-  CI, with no cloud and no cost.
-- **In progress:** the one-command `brain` entrypoint and the Brain Explorer UI.
+  two starter corpora and the full test suite; the one-command `brain` /
+  `brain.ps1` entrypoint (preflight, provision, deploy, seed, connect) with its
+  local subcommands; and the Brain Explorer UI (a dependency-free SPA: wikilink
+  graph coloured by domain, domain browser, search/answer, and a live
+  identity/isolation panel). All of it runs, and is validated in CI, with no cloud
+  and no cost.
+- **Remaining:** observability wiring, richer corpus, and the end-to-end
+  verification rehearsal (phases 8-9).
 
 The `brain up` experience above is the target; today you can build and query the
 brain locally (see below).

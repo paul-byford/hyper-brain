@@ -1,16 +1,14 @@
 """Pillar 1 (functional): the optional curate seam.
 
 Offline the curator is a deterministic passthrough; a custom curator is invoked
-only when a source opts in with ``curate: true``; and naming the real (cloud)
-Gemini curator before its phase fails loudly rather than silently doing nothing.
+only when a source opts in with ``curate: true``; and the Gemini curator rewrites
+via an injected model call (the real one is a lazy in-tenancy Vertex call).
 """
 
 from __future__ import annotations
 
-import pytest
-
 from brain_app.ingest import ingest_source
-from brain_app.ingest.curate import PassthroughCurator, get_curator
+from brain_app.ingest.curate import GeminiCurator, PassthroughCurator, get_curator
 from brain_app.ingest.models import ParsedDoc
 from brain_app.ingest.sources import SourceConfig
 
@@ -31,9 +29,16 @@ def test_passthrough_is_a_noop():
     assert isinstance(get_curator(), PassthroughCurator)
 
 
-def test_gemini_curator_refuses_offline():
-    with pytest.raises(NotImplementedError):
-        get_curator("gemini")
+def test_get_curator_returns_gemini():
+    assert isinstance(get_curator("gemini"), GeminiCurator)
+
+
+def test_gemini_curator_rewrites_via_injected_model():
+    # The real model call is injectable, so the transform is testable with no cloud.
+    curator = GeminiCurator(generate=lambda prompt: "# Clean\n\nRewritten with [[link]].")
+    out = curator.curate(ParsedDoc(body="messy raw text", title="t", tags=["x"]))
+    assert "# Clean" in out.body
+    assert out.title == "t" and out.tags == ["x"]
 
 
 def test_custom_curator_runs_only_when_source_opts_in(tmp_path):

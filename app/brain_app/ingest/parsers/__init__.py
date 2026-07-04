@@ -8,6 +8,8 @@ offline core; it is resolved lazily like the Vertex embeddings adapter.
 
 from __future__ import annotations
 
+import os
+
 from .base import Parser
 from .html import HtmlParser
 from .markdown import MarkdownParser
@@ -28,7 +30,12 @@ def get_parser(mime: str) -> Parser:
     if base in _HTML:
         return HtmlParser()
     if base in _PDF:
-        # Lazy: the real parser needs the cloud, so it is not imported offline.
+        # Lazy: the real parsers need the cloud, so they are not imported offline.
+        # Use in-tenancy Document AI when a processor is configured, else the stub.
+        if os.environ.get("BRAIN_DOCAI_PROCESSOR"):
+            from .pdf import DocumentAiParser
+
+            return DocumentAiParser()
         from .pdf import PdfParser
 
         return PdfParser()

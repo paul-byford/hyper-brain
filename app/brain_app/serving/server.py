@@ -56,7 +56,16 @@ def build_server(
     name: str = "hyper-brain",
 ) -> FastMCP:
     """Wire the five brain tools onto a FastMCP server. Each verifies identity first."""
-    mcp = FastMCP(name)
+    # The MCP transport's DNS-rebinding protection only allows localhost hosts by
+    # default, which 421s a request to the Cloud Run URL. That protection guards a
+    # browser POSTing to a local MCP server; our endpoint is server-to-server and
+    # already gated by Cloud Run IAM plus app-level OIDC, so we disable it.
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    mcp = FastMCP(
+        name,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
 
     def identity(ctx: Context):
         try:
@@ -119,25 +128,40 @@ def build_server(
 
 
 def _load_service() -> BrainService:
-    """Assemble a service from the environment for a real run."""
-    from ..config import load_policy
+    """Assemble a service from the environment for a real run.
+
+    Everything model-facing is env-selected so the same container runs the
+    offline fakes or the in-tenancy Vertex path: BRAIN_EMBEDDINGS (fake|vertex),
+    BRAIN_SYNTH (extractive|gemini), and the proposal gate (memory|git|gcs).
+    Auth and its audience are read by get_verifier from BRAIN_AUTH*.
+    """
+    from ..config import policy_source
     from ..embeddings import get_embeddings
-    from ..retrieval import BrainIndex
-    from .proposals import GitBranchGate
+    from ..retrieval import BrainIndex, get_synthesiser
+    from .proposals import get_gate
 
     index_path = os.environ.get("BRAIN_INDEX", ".brain/index.json")
-    index = BrainIndex.load(index_path)
+    # BRAIN_POLICY may point at a gs:// object so grants take effect without a
+    # rebuild; unset falls back to the profile's policy file baked in the image.
+    source = policy_source(os.environ.get("BRAIN_POLICY"))
     return BrainService(
-        index,
+        None,
         get_embeddings(),
-        load_policy(),
-        gate=GitBranchGate(os.environ.get("BRAIN_REPO", ".")),
+        source(),
+        gate=get_gate(),
+        synthesiser=get_synthesiser(),
+        policy_source=source,
+        # Lazy: the container starts before the index exists; loaded on first query.
+        index_loader=lambda: BrainIndex.load(index_path),
     )
 
 
 def main() -> int:
     from ..auth import get_verifier
+    from ..observability import configure
 
+    # Turn on tracing if BRAIN_OTEL is set (gcp in production; a no-op otherwise).
+    configure()
     server = build_server(_load_service(), get_verifier())
     # Streamable HTTP is the transport the ADK agent and MCP clients connect over.
     server.settings.host = os.environ.get("HOST", "0.0.0.0")  # nosec B104

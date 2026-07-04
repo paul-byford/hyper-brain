@@ -9,6 +9,7 @@ in-tenancy, wired in a later phase. The honest gap statement is kept in both.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterable
 from typing import Protocol
@@ -95,6 +96,23 @@ class ExtractiveSynthesiser:
             gaps=_missing_terms(query, results),
             used_domains=sorted({r.domain for r in results}),
         )
+
+
+def get_synthesiser(name: str | None = None) -> Synthesiser:
+    """Return the configured synthesiser.
+
+    Selected by ``BRAIN_SYNTH`` (``extractive`` default, deterministic and free).
+    ``gemini`` uses an in-tenancy Gemini model on Vertex, imported lazily so the
+    offline core never needs google-genai.
+    """
+    name = name or os.environ.get("BRAIN_SYNTH", "extractive")
+    if name in ("extractive", "fake"):
+        return ExtractiveSynthesiser()
+    if name == "gemini":
+        from .gemini import GeminiSynthesiser
+
+        return GeminiSynthesiser()
+    raise ValueError(f"unknown synthesiser {name!r}")
 
 
 def answer(
