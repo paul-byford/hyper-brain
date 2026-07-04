@@ -144,6 +144,33 @@ def test_policy_source_caches_then_reloads(monkeypatch):
     assert calls["n"] == 3  # TTL expired each call: two more loads
 
 
+def _min_policy():
+    from brain_app.config import Policy
+
+    return Policy(1, (), ())
+
+
+def test_index_reloads_after_ttl(index, embeddings):
+    # With a loader and a positive TTL, the index is reloaded when stale, so a
+    # re-index appears without a redeploy. ttl<=0 loads once and caches.
+    loads = {"n": 0}
+
+    def loader():
+        loads["n"] += 1
+        return index
+
+    cached = BrainService(None, embeddings, _min_policy(), index_loader=loader, index_ttl=0)
+    assert cached.index is index
+    assert cached.index is index
+    assert loads["n"] == 1  # ttl=0: loaded once, cached
+
+    ttl = BrainService(None, embeddings, _min_policy(), index_loader=loader, index_ttl=1000)
+    assert ttl.index is index  # initial load (n=2)
+    ttl._index_at -= 2000  # pretend the TTL elapsed
+    assert ttl.index is index  # stale -> reload (n=3)
+    assert loads["n"] == 3
+
+
 def test_service_resolves_policy_per_request(index, embeddings):
     # Two policies; flipping the source is how a grant becomes visible live.
     finserv_only = Policy(1, (FINSERV, RECRUITMENT), (Grant("group:x@e.com", (FINSERV,)),))

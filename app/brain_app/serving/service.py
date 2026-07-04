@@ -9,6 +9,8 @@ dependency, so the whole security contract is testable offline.
 
 from __future__ import annotations
 
+import os
+import time
 from collections.abc import Callable
 
 from ..auth import Identity, read_domains, writable_domains
@@ -52,12 +54,20 @@ class BrainService:
         synthesiser: Synthesiser | None = None,
         policy_source: Callable[[], Policy] | None = None,
         index_loader: Callable[[], BrainIndex] | None = None,
+        index_ttl: float | None = None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
         # before the index artefact exists in the bucket, and keeps cold start fast.
+        # With a loader and a positive index_ttl, the index is reloaded after that
+        # many seconds, so a re-index appears without a redeploy (mirrors the policy
+        # TTL). Default 0 = load once and cache for the instance's life.
         self._index = index
         self._index_loader = index_loader
+        self._index_ttl = (
+            index_ttl if index_ttl is not None else float(os.environ.get("BRAIN_INDEX_TTL", "0"))
+        )
+        self._index_at = 0.0
         self.embeddings = embeddings
         self.policy = policy
         # Resolve the policy per request through a source, so a grant that updates a
@@ -71,10 +81,14 @@ class BrainService:
 
     @property
     def index(self) -> BrainIndex:
+        if self._index_loader is not None:
+            now = time.monotonic()
+            stale = self._index_ttl > 0 and now - self._index_at > self._index_ttl
+            if self._index is None or stale:
+                self._index = self._index_loader()
+                self._index_at = now
         if self._index is None:
-            if self._index_loader is None:
-                raise RuntimeError("BrainService has neither an index nor an index_loader")
-            self._index = self._index_loader()
+            raise RuntimeError("BrainService has neither an index nor an index_loader")
         return self._index
 
     def _visible_domains(self, identity: Identity) -> set[str]:

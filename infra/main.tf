@@ -99,6 +99,9 @@ module "brain_service" {
   env = merge(local.common_env, {
     BRAIN_PROFILE = var.profile
     BRAIN_INDEX   = "gs://${module.storage.index_bucket}/index.json"
+    # Reload the index from the bucket after this many seconds, so a re-index
+    # appears without a redeploy (0 = cache for the instance's life).
+    BRAIN_INDEX_TTL = "300"
     # In-tenancy Vertex on the whole data-boundary path.
     BRAIN_EMBEDDINGS  = "vertex"
     BRAIN_SYNTH       = "gemini"
