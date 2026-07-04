@@ -1,0 +1,25 @@
+# Controlled profile template. Copy to controlled.tfvars and fill in your values.
+# controlled.tfvars is git-ignored so real org ids / project ids are not committed.
+#
+# The controlled profile is authored in the same modules as personal, behind the
+# profile switch. It is proven by `terraform validate`, a plan where feasible, and
+# the conftest/checkov policy checks in CI; it is NOT live-applied in the personal
+# demo (IMPLEMENTATION-PLAN.md "Decisions locked"). Resources that need an
+# Organization (VPC-SC, Workforce Identity) fall back to validate + static checks.
+
+project_id      = "your-controlled-project"
+org_id          = "000000000000"
+invoker_members = ["principalSet://iam.googleapis.com/locations/global/workforcePools/brain-bank-pool/group/brain-users"]
+
+profile = "controlled"
+region  = "europe-west2"
+
+# Keep data: never force-destroy in a controlled environment.
+force_destroy_buckets = false
+
+# Controlled turns on the perimeter, federation and observability.
+enable_observability      = true
+enable_vpc_sc             = true
+enable_workforce_identity = true
+
+workforce_pool_issuer_uri = "https://idp.example-bank.com"

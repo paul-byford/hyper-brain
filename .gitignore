@@ -21,8 +21,11 @@ IMPLEMENTATION-PLAN.md
 *.tfstate
 *.tfstate.*
 crash.log
-*.tfvars.local
 .terraform.lock.hcl
+# Real tfvars hold environment-specific project ids and identities; commit only the
+# .example templates. Copy an .example to <profile>.tfvars and fill it in.
+config/*.tfvars
+!config/*.tfvars.example
 
 # Secrets and credentials (never commit)
 *.key
@@ -41,3 +44,6 @@ Thumbs.db
 
 # Downloaded local tooling (terraform, conftest, checkov binaries)
 .tools/
+
+# Generated Brain Explorer data (exported from the index)
+ui/data/

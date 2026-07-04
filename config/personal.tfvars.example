@@ -1,0 +1,23 @@
+# Personal profile template. Copy this to personal.tfvars and fill in your values:
+#   cp config/personal.tfvars.example config/personal.tfvars   (or copy on Windows)
+#
+# personal.tfvars is git-ignored, so your real project id and identities never get
+# committed. `./brain up` reads personal.tfvars (and overrides project_id/region on
+# the command line).
+
+# Your Google Cloud project id, and who may invoke the services. Use a Google Group
+# or a user (user:you@example.com) -- never allUsers (the config forbids it).
+project_id      = "your-project-id"
+invoker_members = ["group:your-admins@example.com"]
+
+profile = "personal"
+region  = "europe-west2"
+
+# Disposable demo: buckets can be force-destroyed on teardown.
+force_destroy_buckets = true
+
+# Cloud-costly extras, off by default (near-zero idle cost). Flip observability on
+# to export spans to your own Cloud Trace.
+enable_observability      = false
+enable_vpc_sc             = false
+enable_workforce_identity = false
