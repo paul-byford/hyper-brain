@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ..auth import Identity, can_propose, read_domains, writable_domains
+from ..auth import Identity, read_domains, writable_domains
 from ..config import Policy
 from ..embeddings.base import EmbeddingProvider
 from ..models import Answer, SearchResult
@@ -165,12 +165,16 @@ class BrainService:
             "brain.propose_document",
             **{"brain.domain": domain, "brain.principal": identity.subject},
         ):
-            # Write scope is checked separately from read access: a read-only token,
-            # however broad its domain grant, cannot reach this path.
-            if not can_propose(identity):
-                raise WriteScopeError("token lacks the 'propose' scope")
-            # And the target domain must be one the caller is actually granted.
-            if domain not in writable_domains(identity, self._policy_source()):
+            policy = self._policy_source()
+            writable = writable_domains(identity, policy)
+            # Write is separate from read: a caller with no write grant (and no
+            # propose scope) cannot reach this path, however broad their read access.
+            if not writable:
+                raise WriteScopeError(
+                    "identity has no write access (policy grant or propose scope)"
+                )
+            # And the target domain must be one the caller may actually write.
+            if domain not in writable:
                 raise DomainNotAuthorized(domain)
             proposal = build_proposal(
                 domain=domain,

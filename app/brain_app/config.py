@@ -36,6 +36,9 @@ def profile() -> str:
 class Grant:
     principal: str
     domains: tuple[str, ...]
+    # Read-only by default; write: true additionally lets the principal propose
+    # documents into these domains (the gated write path, ARCHITECTURE.md section 12).
+    write: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,11 @@ def load_policy(path: str | Path | None = None, prof: str | None = None) -> Poli
     data = yaml.safe_load(_read_policy_text(source)) or {}
     domains = tuple(data.get("domains", []))
     grants = tuple(
-        Grant(principal=g["principal"], domains=tuple(g.get("domains", [])))
+        Grant(
+            principal=g["principal"],
+            domains=tuple(g.get("domains", [])),
+            write=bool(g.get("write", False)),
+        )
         for g in data.get("grants", [])
     )
     return Policy(version=int(data.get("version", 1)), domains=domains, grants=grants)

@@ -26,8 +26,20 @@ class SourceConfig:
     options: dict = field(default_factory=dict)
 
 
+def _read_text(source: str | Path) -> str:
+    text = str(source)
+    if text.startswith("gs://"):
+        # The Cloud Run ingest Job reads its sources config from a bucket, so it can
+        # change without rebuilding the image.
+        from google.cloud import storage
+
+        bucket, _, blob = text[len("gs://") :].partition("/")
+        return storage.Client().bucket(bucket).blob(blob).download_as_text()
+    return Path(source).read_text(encoding="utf-8")
+
+
 def load_sources(path: str | Path) -> list[SourceConfig]:
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(_read_text(path)) or {}
     sources: list[SourceConfig] = []
     seen: set[str] = set()
     for entry in data.get("sources", []):

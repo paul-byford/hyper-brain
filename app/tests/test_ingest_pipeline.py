@@ -49,7 +49,8 @@ def test_lands_with_provenance_frontmatter(tmp_path):
     meta, body = parse_frontmatter(landed.read_text(encoding="utf-8"))
     assert meta["domain"] == FINSERV
     assert meta["source"] == "raw-test"
-    assert meta["source_url"].startswith("file://")
+    # source_url is relative provenance, never an absolute file:// URI (no home-dir leak).
+    assert not meta["source_url"].startswith("file://") and ":" not in meta["source_url"]
     assert meta["fetched_at"] == NOW
     assert meta["ingest_run"] == RUN
     assert len(meta["checksum"]) == 64

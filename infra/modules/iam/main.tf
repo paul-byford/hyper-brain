@@ -69,6 +69,13 @@ resource "google_storage_bucket_iam_member" "ingest_corpus_write" {
   member = "serviceAccount:${google_service_account.ingest.email}"
 }
 
+# Ingest reads its sources config (sources.yaml) from the index bucket.
+resource "google_storage_bucket_iam_member" "ingest_index_read" {
+  bucket = var.index_bucket
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.ingest.email}"
+}
+
 # --- Vertex AI: the workloads that call models get aiplatform.user, nothing broader ---
 
 locals {

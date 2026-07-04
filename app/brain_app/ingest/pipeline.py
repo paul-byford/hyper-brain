@@ -93,11 +93,68 @@ def _stamp(
     return f"---\n{front}---\n\n{canonical_body}"
 
 
+# A corpus is either a local directory or a GCS bucket. Landing goes through this
+# narrow store so the same pipeline persists locally (dev/personal) or in-tenancy
+# (the Cloud Run ingest Job writes straight to the corpus bucket).
+class _LocalCorpus:
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    def path(self, rel: str) -> str:
+        return str(self.root / rel)
+
+    def exists(self, rel: str) -> bool:
+        return (self.root / rel).is_file()
+
+    def read_text(self, rel: str) -> str:
+        return (self.root / rel).read_text(encoding="utf-8")
+
+    def write_text(self, rel: str, content: str) -> None:
+        target = self.root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+
+class _GcsCorpus:
+    def __init__(self, uri: str) -> None:
+        self.bucket, _, self.prefix = uri[len("gs://") :].partition("/")
+
+    def _name(self, rel: str) -> str:
+        return f"{self.prefix.rstrip('/')}/{rel}" if self.prefix else rel
+
+    def _blob(self, rel: str):
+        from google.cloud import storage
+
+        return storage.Client().bucket(self.bucket).blob(self._name(rel))
+
+    def path(self, rel: str) -> str:
+        return f"gs://{self.bucket}/{self._name(rel)}"
+
+    def exists(self, rel: str) -> bool:
+        return self._blob(rel).exists()
+
+    def read_text(self, rel: str) -> str:
+        return self._blob(rel).download_as_text()
+
+    def write_text(self, rel: str, content: str) -> None:
+        self._blob(rel).upload_from_string(content)
+
+
+def _corpus_store(corpus_dir: str | Path):
+    if str(corpus_dir).startswith("gs://"):
+        return _GcsCorpus(str(corpus_dir))
+    return _LocalCorpus(corpus_dir)
+
+
+# A landed document is always <domain>/<slug>.md with a clean single-segment slug.
+_SAFE_SLUG = re.compile(r"[a-z0-9-]+")
+
+
 def _land(
     parsed: ParsedDoc,
     item: RawItem,
     source: SourceConfig,
-    corpus_dir: Path,
+    store,
     *,
     known_checksum: str | None,
     run_id: str,
@@ -109,29 +166,28 @@ def _land(
 
     title = parsed.title or _title_from(item.identifier)
     slug = _slugify(parsed.title or Path(item.identifier).stem or item.identifier)
-    domain_dir = corpus_dir / domain
-    target = domain_dir / f"{slug}.md"
 
-    # Isolation guard (defence in depth on top of _slugify): the resolved target
-    # must be a direct child of the configured domain folder. This is the control
-    # that makes "an adapter cannot land outside its domain" true.
-    if target.resolve().parent != domain_dir.resolve():
+    # Isolation guard: the slug must be a single clean path segment, so a landed
+    # document can never escape its domain folder (holds for local and GCS alike).
+    if not _SAFE_SLUG.fullmatch(slug):
         raise ValueError(
-            f"source {source.id!r}: refusing to land {item.identifier!r} outside "
-            f"domain {domain!r} (resolved to {target.resolve()})"
+            f"source {source.id!r}: refusing to land {item.identifier!r} outside domain {domain!r}"
         )
 
-    # Idempotent upsert. If the cursor already recorded this checksum and the file
-    # is still present, nothing changed: leave the file byte-for-byte untouched so
-    # its original fetched_at/ingest_run are preserved.
-    if known_checksum == checksum and target.is_file():
-        return LandResult(f"{domain}/{slug}", str(target), SKIPPED, checksum)
+    rel = f"{domain}/{slug}.md"
+    doc_id = f"{domain}/{slug}"
+
+    # Idempotent upsert. If the cursor already recorded this checksum and the object
+    # is still present, nothing changed: leave it untouched so its original
+    # fetched_at/ingest_run are preserved.
+    if known_checksum == checksum and store.exists(rel):
+        return LandResult(doc_id, store.path(rel), SKIPPED, checksum)
 
     status = WRITTEN
-    if target.is_file():
-        existing_meta, _ = parse_frontmatter(target.read_text(encoding="utf-8"))
+    if store.exists(rel):
+        existing_meta, _ = parse_frontmatter(store.read_text(rel))
         if existing_meta.get("checksum") == checksum:
-            return LandResult(f"{domain}/{slug}", str(target), SKIPPED, checksum)
+            return LandResult(doc_id, store.path(rel), SKIPPED, checksum)
         status = UPDATED
 
     content = _stamp(
@@ -145,9 +201,8 @@ def _land(
         run_id=run_id,
         canonical_body=canonical,
     )
-    domain_dir.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    return LandResult(f"{domain}/{slug}", str(target), status, checksum)
+    store.write_text(rel, content)
+    return LandResult(doc_id, store.path(rel), status, checksum)
 
 
 def ingest_source(
@@ -159,8 +214,11 @@ def ingest_source(
     run_id: str | None = None,
     now: str | None = None,
 ) -> IngestReport:
-    """Run the pipeline for one configured source and return what it landed."""
-    corpus_path = Path(corpus_dir)
+    """Run the pipeline for one configured source and return what it landed.
+
+    ``corpus_dir`` may be a local path or a ``gs://`` bucket; landing goes to either.
+    """
+    store = _corpus_store(corpus_dir)
     active_curator = curator or (get_curator() if source.curate else PassthroughCurator())
     adapter = build_adapter(source.type, source.id, source.options)
     state = SourceState(source.id, state_dir)
@@ -182,7 +240,7 @@ def ingest_source(
             parser_doc,
             item,
             source,
-            corpus_path,
+            store,
             known_checksum=state.checksum_for(item.identifier),
             run_id=run_id,
             now=now,

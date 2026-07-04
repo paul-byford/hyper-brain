@@ -12,9 +12,12 @@ domains:
   - enterprise-ai-recruitment
 
 grants:
-  # The provisioner / admins see everything. Uses a group rather than a personal
-  # identity so no real account is baked into the repo.
+  # The provisioner / admins see everything, and may also propose documents
+  # (write: true). Write is separate from read: omit write and a grant is read-only.
+  # A Google OIDC identity is authorised to write purely by this flag -- no special
+  # token scope is needed.
   - principal: group:brain-admins@example.com
+    write: true
     domains:
       - finserv-ai-engineering
       - enterprise-ai-recruitment

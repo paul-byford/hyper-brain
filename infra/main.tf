@@ -19,6 +19,9 @@ locals {
   # The brain loads its policy from the bucket, so `brain grant` (which updates this
   # object) takes effect without a rebuild.
   policy_uri = "gs://${module.storage.index_bucket}/policy.yaml"
+
+  # The ingest Job reads its sources config from the bucket (change without rebuild).
+  sources_uri = "gs://${module.storage.index_bucket}/sources.yaml"
 }
 
 # The active policy, published to the bucket the brain reads it from.
@@ -26,6 +29,13 @@ resource "google_storage_bucket_object" "policy" {
   name   = "policy.yaml"
   bucket = module.storage.index_bucket
   source = "${path.module}/../config/${var.profile}.policy.yaml"
+}
+
+# The ingestion sources config, published for the ingest Job.
+resource "google_storage_bucket_object" "sources" {
+  name   = "sources.yaml"
+  bucket = module.storage.index_bucket
+  source = "${path.module}/../config/sources.yaml"
 }
 
 module "vertex" {
@@ -175,7 +185,14 @@ module "ingest_job" {
   image           = var.image_ingest
   service_account = module.iam.ingest_sa_email
   labels          = var.labels
-  env             = merge(local.common_env, { BRAIN_EMBEDDINGS = "vertex" })
+  # Pull configured sources (web/git for in-tenancy fetch) and land provenance-
+  # stamped markdown straight into the corpus bucket.
+  args = [
+    "python", "-m", "brain_app.ingest.run",
+    "--sources", local.sources_uri,
+    "--corpus", "gs://${module.storage.corpus_bucket}",
+  ]
+  env = merge(local.common_env, { BRAIN_EMBEDDINGS = "vertex" })
 
   depends_on = [google_project_service.base]
 }

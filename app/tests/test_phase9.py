@@ -171,3 +171,59 @@ def test_get_parser_selects_document_ai_when_configured(monkeypatch):
     monkeypatch.setenv("BRAIN_DOCAI_PROCESSOR", "projects/p/locations/l/processors/x")
     assert isinstance(get_parser("application/pdf"), DocumentAiParser)
     monkeypatch.delenv("BRAIN_DOCAI_PROCESSOR")
+
+
+# --- Ingest lands to a gs:// corpus (the in-tenancy cloud path) ----------------
+
+
+def test_ingest_lands_to_gcs_corpus(tmp_path, monkeypatch):
+    from brain_app.ingest import ingest_source
+    from brain_app.ingest.sources import SourceConfig
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "note.md").write_text("---\ntitle: Cloud Note\n---\n\n# Cloud Note\n\nBody.\n", "utf-8")
+
+    blobs: dict[str, str] = {}
+
+    class _Blob:
+        def __init__(self, name):
+            self.name = name
+
+        def exists(self):
+            return self.name in blobs
+
+        def download_as_text(self):
+            return blobs[self.name]
+
+        def upload_from_string(self, data):
+            blobs[self.name] = data
+
+    class _Bucket:
+        def blob(self, name):
+            return _Blob(name)
+
+    class _Client:
+        def bucket(self, name):
+            return _Bucket()
+
+    import google.cloud.storage as gcs
+
+    monkeypatch.setattr(gcs, "Client", _Client)
+
+    source = SourceConfig(
+        id="raw-test",
+        type="local",
+        domain=FINSERV,
+        curate=False,
+        options={"path": str(raw), "glob": "*.md"},
+    )
+    report = ingest_source(
+        source, "gs://brain-corpus", state_dir=str(tmp_path / "state"), run_id="r", now="n"
+    )
+
+    assert report.written == 1
+    name = f"{FINSERV}/cloud-note.md"
+    assert name in blobs  # landed into the bucket under <domain>/<slug>.md
+    assert f"domain: {FINSERV}" in blobs[name]
+    assert "source: raw-test" in blobs[name]

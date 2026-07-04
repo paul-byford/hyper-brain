@@ -13,7 +13,7 @@ import pytest
 
 from brain_app.ingest import ingest_source
 from brain_app.ingest.models import ParsedDoc, RawItem
-from brain_app.ingest.pipeline import _land, _slugify
+from brain_app.ingest.pipeline import _corpus_store, _land, _slugify
 from brain_app.ingest.sources import SourceConfig
 
 from .conftest import FINSERV, RECRUITMENT
@@ -72,8 +72,8 @@ def test_slugify_neutralises_path_traversal():
 
 
 def test_land_guard_rejects_escaping_target(tmp_path, monkeypatch):
-    # Force a slug that tries to escape, proving the resolved-path guard fires even
-    # if slugification were ever bypassed.
+    # Force a slug that tries to escape, proving the slug guard fires even if
+    # slugification were ever bypassed (holds for the local and GCS stores alike).
     monkeypatch.setattr("brain_app.ingest.pipeline._slugify", lambda _v: "../escape")
     item = RawItem(identifier="x", content=b"", mime="text/markdown", source_url="file://x")
     with pytest.raises(ValueError, match="outside domain"):
@@ -81,7 +81,7 @@ def test_land_guard_rejects_escaping_target(tmp_path, monkeypatch):
             ParsedDoc(body="hi"),
             item,
             _source(tmp_path, FINSERV),
-            tmp_path / "corpus",
+            _corpus_store(tmp_path / "corpus"),
             known_checksum=None,
             run_id=RUN,
             now=NOW,
