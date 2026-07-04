@@ -44,10 +44,17 @@ class LocalAdapter:
             if not path.is_file():
                 continue
             identifier = path.relative_to(self.root).as_posix()
+            # Record provenance as a path relative to the working directory, never an
+            # absolute file:// URI: an absolute path would embed the OS username and
+            # home directory in the landed markdown (and thus the corpus / a public repo).
+            try:
+                source_url = path.resolve().relative_to(Path.cwd()).as_posix()
+            except ValueError:
+                source_url = identifier
             yield RawItem(
                 identifier=identifier,
                 content=path.read_bytes(),
                 mime=self._mime(path),
-                source_url=path.resolve().as_uri(),
+                source_url=source_url,
                 title=None,
             )

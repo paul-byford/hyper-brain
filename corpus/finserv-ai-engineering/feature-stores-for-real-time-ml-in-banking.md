@@ -6,7 +6,7 @@ tags:
 - streaming
 - latency
 source: raw-finserv
-source_url: file:///C:/Users/firew/Dev/hyper-brain/raw/finserv/feature-stores-for-realtime-ml.md
+source_url: raw/finserv/feature-stores-for-realtime-ml.md
 fetched_at: '2026-07-03T12:32:05+00:00'
 checksum: b8929b1e0f4880c99ea3f7bd192439c2b39ebcbff6b2bc1b4bb59b161a83cbc2
 ingest_run: ingest-b13e3f7b6873

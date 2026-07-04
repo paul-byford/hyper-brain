@@ -33,7 +33,10 @@ def test_local_adapter_contract(tmp_path):
     assert [i.identifier for i in items] == ["a.md", "sub/b.md"]
     assert all(i.content for i in items)
     assert all(i.mime == "text/markdown" for i in items)
-    assert all(i.source_url.startswith("file://") for i in items)
+    # source_url is a relative provenance path, never an absolute file:// URI that
+    # would leak the home directory / OS username into the landed corpus.
+    assert all(not i.source_url.startswith("file://") for i in items)
+    assert all(not i.source_url.startswith("/") and ":" not in i.source_url for i in items)
 
 
 def test_web_adapter_with_injected_opener():
