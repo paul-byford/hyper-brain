@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# hyper-brain: the one command (POSIX). See ./brain.ps1 for Windows.
+#
+# A thin, honest orchestration over already-working pieces (ARCHITECTURE.md
+# section 13): preflight, terraform apply, build & push the image, seed the index,
+# and print how to connect. Re-running converges (terraform is declarative, the
+# state bucket bootstrap is create-if-not-exists, the index upserts by hash).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+INFRA="$ROOT/infra"
+PROFILE="${BRAIN_PROFILE:-personal}"
+REGION="${BRAIN_REGION:-europe-west2}"
+PROJECT="${BRAIN_PROJECT:-}"
+DOMAINS=""
+
+info() { printf '\033[36m==> %s\033[0m\n' "$1"; }
+note() { printf '    %s\n' "$1"; }
+die() { printf '\033[31mError:\033[0m %s\n' "$1" >&2; exit 1; }
+
+python_bin() {
+  # Prefer the project venv (Unix or, under git-bash on Windows, the Scripts layout).
+  if [ -x "$ROOT/.venv/bin/python" ]; then echo "$ROOT/.venv/bin/python"
+  elif [ -x "$ROOT/.venv/Scripts/python.exe" ]; then echo "$ROOT/.venv/Scripts/python.exe"
+  elif command -v python3 >/dev/null 2>&1; then echo python3
+  else die "no Python found. Create the venv first (see README)."; fi
+}
+
+require() { command -v "$1" >/dev/null 2>&1 || die "$1 is required. $2"; }
+
+resolve_project() {
+  if [ -n "$PROJECT" ]; then echo "$PROJECT"; return; fi
+  if command -v gcloud >/dev/null 2>&1; then
+    local p; p="$(gcloud config get-value project 2>/dev/null || true)"
+    if [ -n "$p" ] && [ "$p" != "(unset)" ]; then echo "$p"; return; fi
+  fi
+  die "no project. Pass -p <id> or run: gcloud config set project <id>"
+}
+
+tf() { terraform -chdir="$INFRA" "$@"; }
+tf_output() { terraform -chdir="$INFRA" output -raw "$1" 2>/dev/null || true; }
+
+print_mcp() {
+  info "MCP config block (paste into your agent/client):"
+  cat <<EOF
+{
+  "mcpServers": {
+    "hyper-brain": {
+      "url": "$1/mcp",
+      "headers": { "Authorization": "Bearer <ID_TOKEN>" }
+    }
+  }
+}
+EOF
+  note "Get a token with: gcloud auth print-identity-token"
+}
+
+cmd_help() {
+  cat <<'EOF'
+hyper-brain - one command to a working company brain.
+
+Usage: ./brain <command> [-p project] [--profile personal|controlled] [--region r]
+
+Cloud commands (need gcloud + terraform + Docker, and a billing-enabled project):
+  up            Provision + deploy + seed the brain, then print how to connect.
+  down          Tear everything down (terraform destroy).
+  grant <email> --domains a,b   Grant a teammate invoker + domain access.
+
+Local commands (no cloud):
+  index         Build the local search index from the corpus.
+  ingest        Ingest configured sources into the corpus.
+  eval          Run the offline agent eval tier.
+  agent         Chat with the agent locally (adk web, offline).
+  ui            Serve the Brain Explorer locally (offline).
+  connect       Print the MCP config block for the deployed (or local) brain.
+  status        Show what is deployed (or local state).
+  preflight     Run the prerequisite checks only.
+  version       Print the version.
+  help          Show this help.
+EOF
+}
+
+cmd_version() {
+  "$(python_bin)" -c "import tomllib,pathlib;print('hyper-brain',tomllib.loads(pathlib.Path('app/pyproject.toml').read_text())['project']['version'])"
+}
+
+cmd_preflight() { bash "$ROOT/scripts/preflight.sh" "$PROJECT" >/dev/null; }
+
+cmd_index() { info "Building local index from corpus/"; "$(python_bin)" -m brain_app.indexer.build --corpus corpus --out .brain/index.json; }
+cmd_ingest() { info "Ingesting configured sources into corpus/"; "$(python_bin)" -m brain_app.ingest.run --sources config/sources.yaml --corpus corpus; }
+cmd_eval() { info "Running the offline eval tier"; "$(python_bin)" -m pytest app/tests -q -m eval; }
+
+cmd_agent() {
+  require adk "Install the agent extra: pip install -e ./app[agent]"
+  info "Starting the agent dev UI (offline). Ctrl+C to stop."
+  adk web "$ROOT/app/brain_app"
+}
+
+cmd_ui() {
+  info "Exporting UI data and serving the Brain Explorer (offline)"
+  "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"
+  local port="${BRAIN_UI_PORT:-8000}"
+  note "Open http://localhost:$port/  (Ctrl+C to stop)"
+  ( cd "$ROOT/ui" && "$(python_bin)" -m http.server "$port" )
+}
+
+cmd_connect() {
+  local url=""
+  command -v terraform >/dev/null 2>&1 && url="$(tf_output brain_url)"
+  if [ -z "$url" ]; then url="${BRAIN_URL:-http://localhost:8080}"; note "No deployed brain found; showing local/default URL."; fi
+  print_mcp "$url"
+}
+
+cmd_status() {
+  if command -v terraform >/dev/null 2>&1 && [ -d "$INFRA/.terraform" ]; then
+    info "Deployed resources (terraform outputs):"; tf output
+  else
+    info "Not deployed. Local state:"
+    if [ -f "$ROOT/.brain/index.json" ]; then note "local index present at .brain/index.json"; else note "no local index yet (run: ./brain index)"; fi
+  fi
+}
+
+cmd_up() {
+  require gcloud "Install the Google Cloud CLI."
+  require terraform "Install Terraform."
+  require docker "Install Docker (to build and push the image)."
+
+  local proj; proj="$(bash "$ROOT/scripts/preflight.sh" "$PROJECT" | tail -1)"
+
+  info "Bootstrapping the Terraform state bucket"
+  terraform -chdir="$INFRA/bootstrap" init -input=false >/dev/null
+  terraform -chdir="$INFRA/bootstrap" apply -auto-approve -var "project_id=$proj" -var "region=$REGION"
+  local state_bucket; state_bucket="$(terraform -chdir="$INFRA/bootstrap" output -raw state_bucket)"
+
+  info "Provisioning infrastructure ($PROFILE profile)"
+  terraform -chdir="$INFRA" init -input=false -reconfigure "-backend-config=bucket=$state_bucket" >/dev/null
+  tf apply -auto-approve -var-file="../config/$PROFILE.tfvars" -var "project_id=$proj" -var "region=$REGION"
+
+  local repo="$REGION-docker.pkg.dev/$proj/brain-images"
+  local brain_image="$repo/brain:latest" agent_image="$repo/agent:latest" ui_image="$repo/ui:latest"
+  info "Building and pushing images to $repo"
+  gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+  docker build -t "$brain_image" -f "$ROOT/app/Dockerfile" "$ROOT/app"
+  docker build -t "$agent_image" -f "$ROOT/app/Dockerfile.agent" "$ROOT/app"
+  "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"   # bake the SPA data
+  docker build -t "$ui_image" "$ROOT/ui"
+  for img in "$brain_image" "$agent_image" "$ui_image"; do docker push "$img"; done
+
+  local corpus_bucket; corpus_bucket="$(tf_output corpus_bucket)"
+  info "Uploading corpus to gs://$corpus_bucket"
+  gcloud storage rsync -r "$ROOT/corpus" "gs://$corpus_bucket" --quiet
+  local brain_url; brain_url="$(tf_output brain_url)"
+  tf apply -auto-approve -var-file="../config/$PROFILE.tfvars" -var "project_id=$proj" -var "region=$REGION" \
+    -var "image_brain=$brain_image" -var "image_indexer=$brain_image" -var "image_ingest=$brain_image" \
+    -var "image_agent=$agent_image" -var "image_ui=$ui_image" -var "brain_audience=$brain_url"
+
+  local prefix; prefix="$(tf_output name_prefix)"
+  info "Running the index job (in-tenancy Vertex build to gs://$(tf_output index_bucket))"
+  gcloud run jobs execute "$prefix-indexer" --project "$proj" --region "$REGION" --wait >/dev/null 2>&1 \
+    || note "index job did not complete; check: gcloud run jobs executions list --job $prefix-indexer"
+
+  info "Done. Your brain is live."
+  note "brain: $brain_url"
+  note "agent: $(tf_output agent_url)"
+  note "ui:    $(tf_output ui_url)"
+  print_mcp "$brain_url"
+}
+
+cmd_down() {
+  require terraform "Install Terraform."
+  local proj; proj="$(resolve_project)"
+  info "Tearing down the $PROFILE stack"
+  tf destroy -auto-approve -var-file="../config/$PROFILE.tfvars" -var "project_id=$proj" -var "region=$REGION"
+  info "Done. Residual cost is only bucket/registry storage (pennies)."
+}
+
+cmd_grant() {
+  require gcloud "Install the Google Cloud CLI."
+  local email="$1"
+  [ -n "$email" ] || die "usage: ./brain grant <email> --domains a,b"
+  [ -n "$DOMAINS" ] || die "specify --domains a,b (the domains this person may retrieve)"
+  local proj; proj="$(resolve_project)"
+  local prefix; prefix="$(tf_output name_prefix)"; [ -n "$prefix" ] || prefix="brain"
+  info "Granting $email invoker access on the brain, agent and UI"
+  for svc in brain agent ui; do
+    gcloud run services add-iam-policy-binding "$prefix-$svc" \
+      --project "$proj" --region "$REGION" \
+      --member "user:$email" --role "roles/run.invoker" --quiet 2>/dev/null || true
+  done
+  info "Now add $email to the domain ACL. Edit config/$PROFILE.policy.yaml, add a grant for"
+  note "principal 'user:$email' with domains: [$DOMAINS], then upload it (picked up in ~30s):"
+  note "  gcloud storage cp config/$PROFILE.policy.yaml gs://$(tf_output index_bucket)/policy.yaml"
+}
+
+# --- Parse args: <command> then flags -----------------------------------------
+COMMAND="${1:-help}"; shift || true
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--project) PROJECT="$2"; shift 2;;
+    --profile) PROFILE="$2"; shift 2;;
+    --region) REGION="$2"; shift 2;;
+    --domains) DOMAINS="$2"; shift 2;;
+    *) POSITIONAL+=("$1"); shift;;
+  esac
+done
+set -- "${POSITIONAL[@]:-}"
+
+case "$COMMAND" in
+  help|-h|--help) cmd_help;;
+  version) cmd_version;;
+  preflight) cmd_preflight;;
+  index) cmd_index;;
+  ingest) cmd_ingest;;
+  eval) cmd_eval;;
+  agent) cmd_agent;;
+  ui) cmd_ui;;
+  connect) cmd_connect;;
+  status) cmd_status;;
+  up) cmd_up;;
+  down) cmd_down;;
+  grant) cmd_grant "${1:-}";;
+  *) die "unknown command '$COMMAND'. Run: ./brain help";;
+esac
