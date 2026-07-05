@@ -98,7 +98,14 @@ cmd_agent() {
 
 cmd_ui() {
   info "Exporting UI data and serving the Brain Explorer (offline)"
-  "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"
+  # If a brain is deployed, bake its real MCP endpoint into the connector modal.
+  local mcp_url=""
+  command -v terraform >/dev/null 2>&1 && mcp_url="$(tf_output brain_url)"
+  if [ -n "$mcp_url" ]; then
+    "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE" --mcp-url "$mcp_url/mcp"
+  else
+    "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"
+  fi
   local port="${BRAIN_UI_PORT:-8000}"
   note "Open http://localhost:$port/  (Ctrl+C to stop)"
   ( cd "$ROOT/ui" && "$(python_bin)" -m http.server "$port" )

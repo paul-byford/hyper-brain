@@ -59,24 +59,27 @@ def test_explorer_renders_and_isolation_follows_identity(ui_server):
         page.on("pageerror", lambda e: console_errors.append(str(e)))
 
         page.goto(ui_server)
-        page.wait_for_selector("svg#graph circle", timeout=8000)
+        # Connections is the default page; switch to Explore for the graph + browser.
+        page.click('#pagetabs button[data-page="explore"]')
+        page.wait_for_selector("canvas#graph", timeout=8000)
+        page.wait_for_selector("#browser .domgroup", timeout=8000)
 
-        # Admin sees both domains.
+        # Admin sees both domains (the graph is a canvas, so isolation is observed
+        # through the domain browser and the visible-document count).
         page.select_option("#principal", "group:brain-admins@example.com")
         page.wait_for_timeout(300)
-        admin_nodes = page.locator("svg#graph circle").count()
-        assert page.locator("#allowed-domains .chip").count() == 2
+        assert page.locator("#browser .domgroup").count() == 2
+        admin_docs = int(page.locator("#visN").inner_text())
 
         # Switching to a single-domain identity shrinks the visible sub-graph.
         page.select_option("#principal", "group:finserv-eng@example.com")
         page.wait_for_timeout(300)
-        fin_nodes = page.locator("svg#graph circle").count()
-        assert page.locator("#allowed-domains .chip").count() == 1
-        assert fin_nodes < admin_nodes
+        assert page.locator("#browser .domgroup").count() == 1
+        fin_docs = int(page.locator("#visN").inner_text())
+        assert fin_docs < admin_docs
 
         # A recruitment query as the finserv caller never surfaces recruitment.
         page.fill("#query", "candidate sourcing interview copilots hiring bias")
-        page.click("#search-btn")
         page.wait_for_timeout(300)
         for meta in page.locator("#results .hit .meta").all_inner_texts():
             assert RECRUIT not in meta

@@ -140,7 +140,15 @@ function Cmd-Agent {
 function Cmd-Ui {
     $py = Get-Python
     Info "Exporting UI data and serving the Brain Explorer (offline)"
-    & $py (Join-Path $Root "scripts\export_ui_data.py") --profile $ProfileName
+    # If a brain is deployed, bake its real MCP endpoint into the connector modal.
+    $exporter = Join-Path $Root "scripts\export_ui_data.py"
+    $mcpUrl = ""
+    if (Get-Command terraform -ErrorAction SilentlyContinue) { $mcpUrl = Tf-Output "brain_url" }
+    if ($mcpUrl) {
+        & $py $exporter --profile $ProfileName --mcp-url "$mcpUrl/mcp"
+    } else {
+        & $py $exporter --profile $ProfileName
+    }
     $port = if ($env:BRAIN_UI_PORT) { $env:BRAIN_UI_PORT } else { "8000" }
     Note "Open http://localhost:$port/  (Ctrl+C to stop)"
     Push-Location (Join-Path $Root "ui")

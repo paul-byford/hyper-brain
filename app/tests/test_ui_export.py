@@ -44,3 +44,7 @@ def test_export_writes_index_and_policy(tmp_path):
     policy = json.loads((out / "policy.json").read_text(encoding="utf-8"))
     assert policy["domains"] and policy["grants"]
     assert {"principal", "domains"} <= policy["grants"][0].keys()
+
+    # The connector modal reads the MCP endpoint from config.json.
+    config = json.loads((out / "config.json").read_text(encoding="utf-8"))
+    assert "mcp_url" in config

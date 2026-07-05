@@ -18,7 +18,7 @@ from brain_app.embeddings.fake import FakeEmbeddings
 from brain_app.indexer.build import build_index
 
 
-def export(index_path: str, corpus: str, profile: str, out_dir: str) -> None:
+def export(index_path: str, corpus: str, profile: str, out_dir: str, mcp_url: str = "") -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -39,7 +39,13 @@ def export(index_path: str, corpus: str, profile: str, out_dir: str) -> None:
     }
     (out / "policy.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    print(f"Exported UI data to {out}/ (index.json, policy.json)")
+    # Config the SPA needs but that isn't in the index: the deployed MCP endpoint
+    # shown in the Connections page's connector modal. Left as a placeholder when
+    # not supplied (local runs), set to the real service URL when deploying.
+    config = {"mcp_url": mcp_url or "https://<your-brain>.run.app/mcp"}
+    (out / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    print(f"Exported UI data to {out}/ (index.json, policy.json, config.json)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,8 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--corpus", default="corpus")
     parser.add_argument("--profile", default="personal")
     parser.add_argument("--out", default="ui/data")
+    parser.add_argument("--mcp-url", default="", help="Deployed brain MCP endpoint for the connector modal.")
     args = parser.parse_args(argv)
-    export(args.index, args.corpus, args.profile, args.out)
+    export(args.index, args.corpus, args.profile, args.out, args.mcp_url)
     return 0
 
 

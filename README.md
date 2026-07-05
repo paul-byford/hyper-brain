@@ -8,6 +8,8 @@ One person runs a single command and gets a working brain on Google Cloud;
 teammates join cheaply. It is near-zero cost when idle and tears down cleanly. The
 same repository serves an effortless personal demo and a project that could be deployed inside a cost- and security-controlled environment, with only configuration changing between the two.
 
+![Hyper Brain UI, the Connections page: an animated Sources to Hyper Brain to Surfaces flow, with source categories and the onboarding pipeline](docs/connections.png)
+
 - **Design rationale:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Intellectual lineage** (Karpathy's LLM wiki, Garry Tan's gbrain, and what we
   keep or replace): [`docs/LINEAGE.md`](docs/LINEAGE.md)

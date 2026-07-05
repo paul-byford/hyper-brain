@@ -3,67 +3,183 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Brain Explorer</title>
+  <title>Hyper Brain</title>
+  <meta name="description" content="Hyper Brain: the company's memory, connected and current." />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preload" as="font" type="font/woff2" href="fonts/inter-tight.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="fonts/jetbrains-mono.woff2" crossorigin />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="app">
-    <h1>Brain Explorer</h1>
-    <span class="tag">a caller only ever sees the sub-graph they may read</span>
-    <span class="spacer"></span>
-    <span class="hash" id="hash"></span>
-  </header>
-
-  <main>
-    <!-- Left: identity + domain browser -->
-    <div class="col">
-      <section class="panel" id="identity-panel">
-        <h2>Who am I &amp; what can I see</h2>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="glyph">HB</div>
+      <div>
+        <h1>Hyper Brain</h1>
+        <div class="sub">The company's memory, connected and current</div>
+      </div>
+    </div>
+    <nav class="pagetabs" id="pagetabs" aria-label="Page">
+      <button data-page="connect" class="on">Connections</button>
+      <button data-page="explore">Explore</button>
+    </nav>
+    <div class="bar-right">
+      <div class="seg exp-only" id="modeseg" role="group" aria-label="View mode">
+        <button data-mode="explore" class="on">Explore</button>
+        <button data-mode="split">Split</button>
+        <button data-mode="read">Read</button>
+      </div>
+      <div class="idpill exp-only">
+        <label for="principal">Acting&nbsp;as</label>
         <select id="principal" aria-label="Act as principal"></select>
-        <div class="chips" id="allowed-domains"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Domains &amp; documents</h2>
-        <div id="browser"></div>
-      </section>
+      </div>
+      <div class="hashchip"><span class="livedot"></span> index <b id="hash">52aaa08ce4ae</b> · <span id="doccount">12</span> docs</div>
+      <button class="themetgl" id="theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
     </div>
+  </div>
 
-    <!-- Center: graph + search/answer -->
-    <div class="col">
-      <section class="panel">
-        <h2>Knowledge graph</h2>
-        <svg id="graph" role="img" aria-label="Wikilink graph coloured by domain"></svg>
-        <div class="legend" id="legend"></div>
-      </section>
+  <div class="page" id="page-explore" hidden>
+  <div class="scope">
+    <div class="lead">
+      <span class="eyebrow">Read scope</span>
+      <span class="stat">You can see <b id="visN">12</b> of <b id="totN">12</b> documents</span>
+    </div>
+    <div class="grow"></div>
+    <div class="chips" id="scopechips"></div>
+  </div>
 
-      <section class="panel">
-        <h2>Search &amp; answer</h2>
-        <div class="search-row">
-          <input type="search" id="query" placeholder="Ask the brain, e.g. real-time fraud detection" />
-          <button id="search-btn">Search</button>
+  <div class="grid" id="grid" data-mode="explore">
+    <!-- left column: search, then domains/documents, then ingest -->
+    <div class="col side">
+      <section class="panel searchpanel">
+        <header><h2>Search &amp; answer</h2></header>
+        <div class="body">
+          <div class="search">
+            <div class="field">
+              <span class="mono" style="color:var(--faint)">›</span>
+              <input id="query" type="search" placeholder="Ask Hyper Brain, e.g. real-time fraud detection" autocomplete="off" />
+              <span class="kbd">⏎</span>
+            </div>
+            <div id="results"></div>
+          </div>
         </div>
-        <div id="results"></div>
-      </section>
-    </div>
-
-    <!-- Right: document viewer + add-data -->
-    <div class="col">
-      <section class="panel" id="doc">
-        <h2>Document</h2>
-        <p class="muted">Select a document from the browser or a graph node.</p>
       </section>
 
       <section class="panel">
-        <h2>Add data</h2>
-        <p class="muted">Drop files under <code class="cmd">raw/</code> (or configure
-          <code class="cmd">config/sources.yaml</code>) and run:</p>
-        <p><code class="cmd">./brain ingest</code> &nbsp;then&nbsp; <code class="cmd">./brain index</code></p>
-        <p class="muted">New knowledge lands as provenance-stamped, reviewable markdown and
-          appears here after re-indexing.</p>
+        <header><h2>Domains &amp; documents</h2></header>
+        <div class="body" id="browser"></div>
+      </section>
+
+      <section class="panel adddata">
+        <header><h2>Add data</h2></header>
+        <div class="body">
+          <p class="addnote" style="margin-bottom:9px">New knowledge comes in through connectors:</p>
+          <ul class="minisources" id="minisources"></ul>
+          <button class="gobtn" id="toconnect">See connectors →</button>
+          <p class="addnote" style="margin-top:12px;margin-bottom:0">Everything lands as provenance-stamped, reviewable markdown and appears here within the index TTL, no redeploy.</p>
+        </div>
       </section>
     </div>
-  </main>
+
+    <!-- stage: graph (hero) with the document directly beneath it -->
+    <div class="stage">
+      <section class="panel graphpanel">
+        <header>
+          <h2>Knowledge graph</h2>
+          <span class="ghint">drag to pull · hover to trace links · click to open</span>
+        </header>
+        <div class="graphwrap">
+          <canvas id="graph"></canvas>
+          <div class="tooltip" id="tooltip"><div class="tt"></div><div class="td"></div></div>
+        </div>
+        <div class="body"><div class="legend chips" id="legend"></div></div>
+      </section>
+
+      <section class="panel doc docpanel">
+        <header><h2 id="dochead">Document</h2><button class="docclose" id="docclose" hidden aria-label="Back to graph">✕ close</button></header>
+        <div class="body" id="doc"><p class="placeholder">Select a document from the browser, a graph node, or a search hit.</p></div>
+      </section>
+    </div>
+  </div>
+  </div><!-- /page-explore -->
+
+  <!-- ============================ CONNECTIONS PAGE ============================ -->
+  <div class="page" id="page-connect">
+    <section class="panel flowpanel">
+      <header>
+        <h2>Sources → the brain → Surfaces</h2>
+        <span class="ghint">knowledge flows in from connectors · grounded answers flow out to every surface</span>
+      </header>
+      <div class="flowwrap"><canvas id="flow"></canvas></div>
+      <div class="body flowkey"><span class="eyebrow">Live connectors feed one governed brain · every surface reads it over authenticated MCP</span></div>
+    </section>
+
+    <section class="connsec">
+      <div class="sechead">
+        <span class="eyebrow">Sources</span>
+        <h3>Onboarding content</h3>
+        <p>Connectors bring knowledge into the brain: files, web and code today, and conversations, meeting transcripts and even autonomous agents through the same governed pipeline. Agents are the neat case: they sit on both sides, drafting new notes and drawing on the result. Onboarding a source is a configuration, not a rebuild.</p>
+      </div>
+      <div class="cardgrid" id="sourcecards"></div>
+
+      <section class="panel pipelinepanel">
+        <header><h2>The onboarding pipeline</h2><button class="runbtn" id="runpipe">▶ Onboard a document</button></header>
+        <div class="body">
+          <div class="pipeline" id="pipeline"></div>
+          <div class="pipedetail" id="pipedetail"></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="connsec">
+      <div class="sechead">
+        <span class="eyebrow">Surfaces</span>
+        <h3>Where the brain shows up</h3>
+        <p>Every surface talks to the same governed brain over MCP: a coding assistant in the IDE, a grounded chat or voice assistant, this app, or one you build. Point a new client at the endpoint and it works immediately, with no copy of the data and no new access path to secure.</p>
+      </div>
+      <div class="cardgrid" id="surfacecards"></div>
+      <div class="accessnote"><b>Every surface authenticates the same way.</b> A caller presents a Google-signed OIDC token; the brain verifies it, resolves the principal against the policy, and clamps every read and write to the domains they may see, so one endpoint safely serves an IDE, an assistant and this UI at once.</div>
+    </section>
+
+    <section class="connsec">
+      <div class="sechead">
+        <span class="eyebrow">Under the hood</span>
+        <h3>Built for trust, scale and reach</h3>
+        <p>The parts that make it more than a search box, and the room it leaves to grow.</p>
+      </div>
+      <div class="archgrid" id="archgrid"></div>
+      <p class="archclose">New connectors in, new surfaces out, and each one compounds. Onboard a wiki and every surface can answer from it; add a chat surface and it draws on everything already onboarded. The brain stays the governed centre, and its value grows with everything you connect to it.</p>
+    </section>
+  </div>
+
+  <!-- MCP connector modal (opened from the Embedded / API card) -->
+  <div class="modal" id="mcpmodal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="MCP connector">
+      <header><h2>MCP connector</h2><button class="docclose" data-close aria-label="Close">✕ close</button></header>
+      <div class="body">
+        <p class="modal-lead">Hyper Brain is an MCP server over streamable HTTPS. Point any MCP-capable client at the endpoint, authenticate with a Google-signed token, and it can read the brain, clamped to the domains that caller may see.</p>
+        <div class="field2"><span class="fl">Endpoint</span><code class="cbox" id="mcpurl">https://hyper-brain-xxxxxx-nw.a.run.app/mcp</code><button class="copybtn" data-copy="#mcpurl">Copy</button></div>
+        <div class="field2"><span class="fl">Auth</span><code class="cbox">Authorization: Bearer &lt;Google&nbsp;OIDC&nbsp;token&gt;</code></div>
+        <span class="eyebrow">Client config</span>
+        <pre class="codeblock" id="mcpconf">{
+  "mcpServers": {
+    "hyper-brain": {
+      "type": "http",
+      "url": "https://hyper-brain-xxxxxx-nw.a.run.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${HYPER_BRAIN_TOKEN}"
+      }
+    }
+  }
+}</pre>
+        <button class="copybtn wide" data-copy="#mcpconf">Copy config</button>
+        <p class="modal-note">Mint a token with <code class="cmd">gcloud auth print-identity-token</code> (audience = the service URL), or impersonate a service account for machine-to-machine clients. Every call is OIDC-verified and domain-scoped by policy.</p>
+      </div>
+    </div>
+  </div>
+</div>
 
   <script type="module" src="app.js"></script>
 </body>
