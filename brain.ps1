@@ -209,7 +209,14 @@ function Cmd-Up {
     gcloud auth configure-docker "$Region-docker.pkg.dev" --quiet
     docker build -t $brainImage -f (Join-Path $Root "app\Dockerfile") (Join-Path $Root "app"); if ($LASTEXITCODE -ne 0) { Die "brain image build failed" }
     docker build -t $agentImage -f (Join-Path $Root "app\Dockerfile.agent") (Join-Path $Root "app"); if ($LASTEXITCODE -ne 0) { Die "agent image build failed" }
-    & $py (Join-Path $Root "scripts\export_ui_data.py") --profile $ProfileName   # bake the SPA data
+    # The brain service exists after the first apply, so bake its live MCP endpoint
+    # into the SPA data for the Connections connector modal.
+    $brainUrl = Tf-Output "brain_url"
+    if ($brainUrl) {
+        & $py (Join-Path $Root "scripts\export_ui_data.py") --profile $ProfileName --mcp-url "$brainUrl/mcp"
+    } else {
+        & $py (Join-Path $Root "scripts\export_ui_data.py") --profile $ProfileName
+    }
     docker build -t $uiImage (Join-Path $Root "ui"); if ($LASTEXITCODE -ne 0) { Die "ui image build failed" }
     foreach ($img in @($brainImage, $agentImage, $uiImage)) { docker push $img; if ($LASTEXITCODE -ne 0) { Die "push failed: $img" } }
 
@@ -219,9 +226,11 @@ function Cmd-Up {
     Info "Uploading corpus to gs://$corpusBucket"
     gcloud storage rsync -r (Join-Path $Root "corpus") "gs://$corpusBucket" --quiet
     $brainUrl = Tf-Output "brain_url"
+    $authUrl = Tf-Output "auth_url"
     Tf @("apply", "-auto-approve", "-var-file=../config/$ProfileName.tfvars", "-var", "project_id=$proj", "-var", "region=$Region",
         "-var", "image_brain=$brainImage", "-var", "image_indexer=$brainImage", "-var", "image_ingest=$brainImage",
-        "-var", "image_agent=$agentImage", "-var", "image_ui=$uiImage", "-var", "brain_audience=$brainUrl")
+        "-var", "image_agent=$agentImage", "-var", "image_ui=$uiImage", "-var", "brain_audience=$brainUrl",
+        "-var", "auth_audience=$authUrl")
 
     # 5. Build the index in-tenancy (Vertex embeddings) via the Cloud Run Job.
     $prefix = Tf-Output "name_prefix"
@@ -234,6 +243,7 @@ function Cmd-Up {
     Note "brain: $brainUrl"
     Note "agent: $(Tf-Output 'agent_url')"
     Note "ui:    $(Tf-Output 'ui_url')"
+    if ($authUrl) { Note "auth:  $authUrl  (OAuth AS -- see README to enable remote connectors)" }
     Print-Mcp $brainUrl
 }
 

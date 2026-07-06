@@ -74,13 +74,96 @@ class GoogleOidcVerifier:
         return identity_from_claims(claims)
 
 
+class OAuthJwtVerifier:
+    """Verifies access tokens issued by our in-tenancy OAuth AS.
+
+    RS256, checked against the AS's public JWKS (so the brain never holds the
+    signing key), with the AS as issuer and the brain URL as audience. This is the
+    seam that lets a remote MCP connector -- which authenticated a human via the
+    AS's Google-brokered flow -- reach the brain as any other caller.
+    """
+
+    def __init__(
+        self,
+        issuer: str,
+        audience: str,
+        *,
+        jwks_url: str | None = None,
+        public_pem: str | None = None,
+    ) -> None:
+        self.issuer = issuer
+        self.audience = audience
+        self.jwks_url = jwks_url
+        self.public_pem = public_pem
+        self._jwk_client = None
+
+    def _key_for(self, token: str):
+        if self.public_pem:  # tests / co-located key
+            return self.public_pem
+        import jwt
+
+        if self._jwk_client is None:
+            self._jwk_client = jwt.PyJWKClient(self.jwks_url)  # fetches + caches the JWKS
+        return self._jwk_client.get_signing_key_from_jwt(token).key
+
+    def verify(self, token: str) -> Identity:
+        import jwt
+
+        try:
+            claims = jwt.decode(
+                token,
+                self._key_for(token),
+                algorithms=["RS256"],
+                audience=self.audience,
+                issuer=self.issuer,
+                options={"require": ["exp", "iat", "iss"]},
+            )
+        except Exception as exc:  # PyJWT errors, or a JWKS fetch failure
+            raise TokenError(str(exc)) from exc
+        if claims.get("typ") != "access":
+            raise TokenError("not an access token")
+        return identity_from_claims(claims)
+
+
+class CompositeVerifier:
+    """Accepts a token if any wrapped verifier does; the first to accept wins.
+
+    Lets one endpoint serve both the ADK agent (Google-signed ID tokens) and
+    remote connectors (OAuth access tokens) without the caller declaring which.
+    """
+
+    def __init__(self, verifiers: list[TokenVerifier]) -> None:
+        if not verifiers:
+            raise ValueError("CompositeVerifier needs at least one verifier")
+        self.verifiers = verifiers
+
+    def verify(self, token: str) -> Identity:
+        last: Exception | None = None
+        for verifier in self.verifiers:
+            try:
+                return verifier.verify(token)
+            except TokenError as exc:  # a verifier declining is expected, try the next
+                last = exc
+        raise TokenError("no configured verifier accepted the token") from last
+
+
+def _oauth_verifier_from_env() -> OAuthJwtVerifier:
+    audience = os.environ.get("BRAIN_AUTH_AUDIENCE")
+    issuer = os.environ.get("BRAIN_OAUTH_ISSUER")
+    if not audience or not issuer:
+        raise ValueError("oauth verification requires BRAIN_AUTH_AUDIENCE and BRAIN_OAUTH_ISSUER")
+    jwks_url = os.environ.get("BRAIN_OAUTH_JWKS") or f"{issuer.rstrip('/')}/jwks"
+    return OAuthJwtVerifier(issuer, audience, jwks_url=jwks_url)
+
+
 def get_verifier(provider: str | None = None) -> TokenVerifier:
     """Return the configured verifier.
 
     Selected by ``BRAIN_AUTH`` (``hs256`` default). ``hs256`` reads its secret and
-    optional audience/issuer from the environment; ``google`` needs the service URL
-    as ``BRAIN_AUTH_AUDIENCE``. There is deliberately no unauthenticated mode: a
-    missing secret is an error, not an open door.
+    optional audience/issuer; ``google`` needs the service URL as
+    ``BRAIN_AUTH_AUDIENCE``; ``oauth`` validates our AS's tokens (also needs
+    ``BRAIN_OAUTH_ISSUER``); ``composite`` accepts both Google and OAuth tokens on
+    one endpoint. There is deliberately no unauthenticated mode.
     """
     provider = provider or os.environ.get("BRAIN_AUTH", "hs256")
     if provider == "hs256":
@@ -97,4 +180,11 @@ def get_verifier(provider: str | None = None) -> TokenVerifier:
         if not audience:
             raise ValueError("BRAIN_AUTH=google requires BRAIN_AUTH_AUDIENCE (the service URL)")
         return GoogleOidcVerifier(audience)
+    if provider == "oauth":
+        return _oauth_verifier_from_env()
+    if provider == "composite":
+        audience = os.environ.get("BRAIN_AUTH_AUDIENCE")
+        if not audience:
+            raise ValueError("BRAIN_AUTH=composite requires BRAIN_AUTH_AUDIENCE (the service URL)")
+        return CompositeVerifier([GoogleOidcVerifier(audience), _oauth_verifier_from_env()])
     raise ValueError(f"unknown auth provider {provider!r}")

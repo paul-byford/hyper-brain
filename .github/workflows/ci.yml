@@ -18,10 +18,11 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install
-        # Include the serving [mcp] and agent extras so the MCP server, auth, and
-        # deterministic agent tests all run here (phases 3-4). The slower ADK ROUGE
-        # evals are marked `eval` and run in the Pillar 3 job instead.
-        run: pip install -e ./app[dev,mcp,agent]
+        # Include the serving [mcp], [oauth] (the AS + PyJWT), and agent extras so
+        # the MCP server, OAuth Authorization Server, and deterministic agent tests
+        # all run here. The slower ADK ROUGE evals are marked `eval` and run in the
+        # Pillar 3 job instead.
+        run: pip install -e ./app[dev,mcp,agent,oauth]
       - name: Lint
         run: |
           ruff check app

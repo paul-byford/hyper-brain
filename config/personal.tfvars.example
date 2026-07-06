@@ -21,3 +21,22 @@ force_destroy_buckets = true
 enable_observability      = false
 enable_vpc_sc             = false
 enable_workforce_identity = false
+
+# --- OAuth for remote MCP connectors (Claude/ChatGPT "add by URL") ---
+# The in-tenancy OAuth AS is provisioned by default. To actually enable remote
+# connectors you must, after the first `./brain up` (which prints the auth URL),
+# create a Google OAuth client (Web application) whose authorized redirect URI is
+# <auth_url>/oauth2/callback, then paste its id/secret below and run `./brain up`
+# again. Leaving these blank keeps the brain Google-identity-gated (no remote
+# connectors, no public ingress). See the README "Remote connectors (OAuth)".
+enable_oauth         = true
+google_client_id     = ""
+google_client_secret = ""
+
+# Real policy grants, merged into the published policy at apply time (so your
+# email is granted declaratively and never committed to the tracked config, which
+# stays @example.com). Your identity is your bare Google email. Example:
+# extra_grants = [
+#   { principal = "you@example.com", domains = ["finserv-ai-engineering", "enterprise-ai-recruitment"], write = true },
+# ]
+extra_grants = []

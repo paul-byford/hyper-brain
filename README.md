@@ -15,6 +15,7 @@ same repository serves an effortless personal demo and a project that could be d
   keep or replace): [`docs/LINEAGE.md`](docs/LINEAGE.md)
 - **Build plan and status:** [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
 - **Tracing walkthrough:** [`docs/observability.md`](docs/observability.md)
+- **Remote connectors (OAuth):** [`docs/oauth.md`](docs/oauth.md) — add the brain to Claude/ChatGPT by URL
 
 ## How it works, in one picture
 

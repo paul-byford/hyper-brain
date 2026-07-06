@@ -24,11 +24,43 @@ locals {
   sources_uri = "gs://${module.storage.index_bucket}/sources.yaml"
 }
 
-# The active policy, published to the bucket the brain reads it from.
+# The active policy, published to the bucket the brain reads it from. It is the
+# profile's base file (tracked, @example.com only) plus any `extra_grants` supplied
+# via gitignored tfvars, so real identities are granted declaratively without ever
+# landing in the committed config. Generated as content (not the raw file) so the
+# merge happens at apply time.
+locals {
+  base_policy = yamldecode(file("${path.module}/../config/${var.profile}.policy.yaml"))
+  policy_document = {
+    version = try(local.base_policy.version, 1)
+    domains = local.base_policy.domains
+    grants = concat(
+      [for g in local.base_policy.grants : {
+        principal = g.principal
+        domains   = g.domains
+        write     = try(g.write, false)
+      }],
+      [for g in var.extra_grants : {
+        principal = g.principal
+        domains   = g.domains
+        write     = g.write
+      }],
+      # The deployed ADK agent reads the brain as its own service account, so grant
+      # it read access to every domain. Declarative (Terraform knows the SA email),
+      # so the agent works out of the box with no personal data in the config.
+      [{
+        principal = module.iam.agent_sa_email
+        domains   = local.base_policy.domains
+        write     = false
+      }],
+    )
+  }
+}
+
 resource "google_storage_bucket_object" "policy" {
-  name   = "policy.yaml"
-  bucket = module.storage.index_bucket
-  source = "${path.module}/../config/${var.profile}.policy.yaml"
+  name    = "policy.yaml"
+  bucket  = module.storage.index_bucket
+  content = yamlencode(local.policy_document)
 }
 
 # The ingestion sources config, published for the ingest Job.
@@ -90,11 +122,14 @@ module "brain_service" {
   image           = var.image_brain
   service_account = module.iam.brain_sa_email
   ingress         = local.service_ingress
-  # The agent and UI call the brain, so they invoke it too (still never allUsers).
+  # The agent and UI call the brain, so they invoke it too. When the OAuth AS is
+  # live, the brain also opens to allUsers on the personal profile so remote MCP
+  # connectors can reach it -- the OAuth bearer is then the sole gate (controlled
+  # stays perimeter-internal).
   invoker_members = concat(var.invoker_members, [
     "serviceAccount:${module.iam.agent_sa_email}",
     "serviceAccount:${module.iam.ui_sa_email}",
-  ])
+  ], local.oauth_live && !local.is_controlled ? ["allUsers"] : [])
   labels = var.labels
   env = merge(local.common_env, {
     BRAIN_PROFILE = var.profile
@@ -107,7 +142,6 @@ module "brain_service" {
     BRAIN_SYNTH       = "gemini"
     BRAIN_SYNTH_MODEL = var.agent_model
     # Google-signed OIDC verified against this service's own URL as the audience.
-    BRAIN_AUTH          = "google"
     BRAIN_AUTH_AUDIENCE = var.brain_audience
     BRAIN_AUTH_ISSUER   = "https://accounts.google.com"
     # Policy from the bucket (grant rollout) and proposals staged to the corpus bucket.
@@ -115,6 +149,14 @@ module "brain_service" {
     BRAIN_PROPOSE_GATE     = "gcs"
     BRAIN_PROPOSALS_BUCKET = module.storage.corpus_bucket
     BRAIN_OTEL             = local.otel_exporter
+    # When the OAuth AS is live, accept both Google ID tokens (the agent) and our
+    # AS's access tokens (remote connectors); otherwise Google only.
+    }, local.oauth_live ? {
+    BRAIN_AUTH         = "composite"
+    BRAIN_OAUTH_ISSUER = var.auth_audience
+    BRAIN_OAUTH_JWKS   = "${var.auth_audience}/jwks"
+    } : {
+    BRAIN_AUTH = "google"
   })
 
   depends_on = [google_project_service.base]

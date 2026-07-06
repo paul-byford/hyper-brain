@@ -33,6 +33,18 @@ variable "env" {
   default = {}
 }
 
+# Container entrypoint override (argv). Empty uses the image's CMD.
+variable "args" {
+  type    = list(string)
+  default = []
+}
+
+# Env vars sourced from Secret Manager: map of env name -> secret id.
+variable "secret_env" {
+  type    = map(string)
+  default = {}
+}
+
 variable "max_instances" {
   type    = number
   default = 4

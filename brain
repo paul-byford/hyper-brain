@@ -149,17 +149,25 @@ cmd_up() {
   gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
   docker build -t "$brain_image" -f "$ROOT/app/Dockerfile" "$ROOT/app"
   docker build -t "$agent_image" -f "$ROOT/app/Dockerfile.agent" "$ROOT/app"
-  "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"   # bake the SPA data
+  # The brain service exists after the first apply, so bake its live MCP endpoint
+  # into the SPA data for the Connections connector modal.
+  local brain_url; brain_url="$(tf_output brain_url)"
+  local auth_url; auth_url="$(tf_output auth_url)"
+  if [ -n "$brain_url" ]; then
+    "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE" --mcp-url "$brain_url/mcp"
+  else
+    "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"
+  fi
   docker build -t "$ui_image" "$ROOT/ui"
   for img in "$brain_image" "$agent_image" "$ui_image"; do docker push "$img"; done
 
   local corpus_bucket; corpus_bucket="$(tf_output corpus_bucket)"
   info "Uploading corpus to gs://$corpus_bucket"
   gcloud storage rsync -r "$ROOT/corpus" "gs://$corpus_bucket" --quiet
-  local brain_url; brain_url="$(tf_output brain_url)"
   tf apply -auto-approve -var-file="../config/$PROFILE.tfvars" -var "project_id=$proj" -var "region=$REGION" \
     -var "image_brain=$brain_image" -var "image_indexer=$brain_image" -var "image_ingest=$brain_image" \
-    -var "image_agent=$agent_image" -var "image_ui=$ui_image" -var "brain_audience=$brain_url"
+    -var "image_agent=$agent_image" -var "image_ui=$ui_image" -var "brain_audience=$brain_url" \
+    -var "auth_audience=$auth_url"
 
   local prefix; prefix="$(tf_output name_prefix)"
   info "Running the index job (in-tenancy Vertex build to gs://$(tf_output index_bucket))"
@@ -170,6 +178,7 @@ cmd_up() {
   note "brain: $brain_url"
   note "agent: $(tf_output agent_url)"
   note "ui:    $(tf_output ui_url)"
+  [ -n "$auth_url" ] && note "auth:  $auth_url  (OAuth AS -- see README to enable remote connectors)"
   print_mcp "$brain_url"
 }
 

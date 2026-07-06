@@ -22,12 +22,30 @@ resource "google_cloud_run_v2_service" "this" {
 
     containers {
       image = var.image
+      # Override the image entrypoint when set (e.g. run the OAuth AS from the
+      # same image as the brain); empty falls back to the image's CMD.
+      args = length(var.args) > 0 ? var.args : null
 
       dynamic "env" {
         for_each = var.env
         content {
           name  = env.key
           value = env.value
+        }
+      }
+
+      # Env sourced from Secret Manager (signing key, upstream Google client), so
+      # secrets never sit in plaintext on the service definition.
+      dynamic "env" {
+        for_each = var.secret_env
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
         }
       }
 

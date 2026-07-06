@@ -49,23 +49,72 @@ def _answer_to_dict(result: Answer) -> dict:
     }
 
 
+class _MCPTokenVerifier:
+    """Adapts our ``TokenVerifier`` to the MCP SDK's async token-verifier interface.
+
+    With this wired in, FastMCP serves the OAuth protected-resource metadata and
+    answers an unauthenticated call with 401 + ``WWW-Authenticate`` pointing at the
+    AS -- the discovery trigger a remote connector needs. Returning ``None`` means
+    'reject' (the SDK turns it into the 401).
+    """
+
+    def __init__(self, verifier: TokenVerifier, resource: str) -> None:
+        self.verifier = verifier
+        self.resource = resource
+
+    async def verify_token(self, token: str):
+        from mcp.server.auth.provider import AccessToken
+
+        try:
+            ident = self.verifier.verify(token)
+        except Exception:  # any verification failure is simply 'unauthenticated'
+            return None
+        exp = ident.claims.get("exp")
+        return AccessToken(
+            token=token,
+            client_id=str(ident.claims.get("azp") or ident.claims.get("aud") or ""),
+            scopes=list(ident.scopes) or ["mcp"],
+            expires_at=int(exp) if exp else None,
+            resource=self.resource,
+            subject=ident.subject,
+            claims=dict(ident.claims),
+        )
+
+
 def build_server(
     service: BrainService,
     verifier: TokenVerifier,
     *,
     name: str = "hyper-brain",
+    auth_issuer: str | None = None,
+    resource: str | None = None,
 ) -> FastMCP:
-    """Wire the five brain tools onto a FastMCP server. Each verifies identity first."""
+    """Wire the five brain tools onto a FastMCP server. Each verifies identity first.
+
+    When ``auth_issuer`` and ``resource`` are given, the server also runs as an
+    OAuth 2.1 resource server for our in-tenancy AS, so remote connectors can
+    discover the AS and sign in.
+    """
     # The MCP transport's DNS-rebinding protection only allows localhost hosts by
     # default, which 421s a request to the Cloud Run URL. That protection guards a
     # browser POSTing to a local MCP server; our endpoint is server-to-server and
-    # already gated by Cloud Run IAM plus app-level OIDC, so we disable it.
+    # authenticated in-app (OIDC/OAuth), so we disable it.
     from mcp.server.transport_security import TransportSecuritySettings
 
-    mcp = FastMCP(
-        name,
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-    )
+    kwargs: dict = {
+        "transport_security": TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    }
+    if auth_issuer and resource:
+        from mcp.server.auth.settings import AuthSettings
+
+        kwargs["token_verifier"] = _MCPTokenVerifier(verifier, resource)
+        kwargs["auth"] = AuthSettings(
+            issuer_url=auth_issuer,
+            resource_server_url=resource,
+            required_scopes=[],
+        )
+
+    mcp = FastMCP(name, **kwargs)
 
     def identity(ctx: Context):
         try:
@@ -162,7 +211,15 @@ def main() -> int:
 
     # Turn on tracing if BRAIN_OTEL is set (gcp in production; a no-op otherwise).
     configure()
-    server = build_server(_load_service(), get_verifier())
+    # If an OAuth AS is configured, advertise it so remote connectors can sign in.
+    auth_issuer = os.environ.get("BRAIN_OAUTH_ISSUER")
+    resource = os.environ.get("BRAIN_AUTH_AUDIENCE")
+    server = build_server(
+        _load_service(),
+        get_verifier(),
+        auth_issuer=auth_issuer,
+        resource=resource if auth_issuer else None,
+    )
     # Streamable HTTP is the transport the ADK agent and MCP clients connect over.
     server.settings.host = os.environ.get("HOST", "0.0.0.0")  # nosec B104
     server.settings.port = int(os.environ.get("PORT", "8080"))

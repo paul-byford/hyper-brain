@@ -96,6 +96,46 @@ variable "agent_model" {
   default     = "gemini-2.5-flash"
 }
 
+# --- OAuth Authorization Server (lets remote MCP connectors sign in) ---
+variable "enable_oauth" {
+  description = "Provision the in-tenancy OAuth AS and open the brain to remote connectors."
+  type        = bool
+  default     = true
+}
+
+variable "auth_audience" {
+  description = "The OAuth AS's own Cloud Run URL (the token issuer). Set on the second apply once known; the entrypoint passes it automatically."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_id" {
+  description = "Upstream Google OAuth client id for Sign in with Google (created in the console). Empty until you add it."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Upstream Google OAuth client secret. Empty until you add it; kept out of the repo (gitignored tfvars)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# Extra policy grants merged into the published policy. Put real identities here
+# (in gitignored personal.tfvars) so they are granted declaratively without ever
+# committing an email to the tracked config. Principal is a bare email, a
+# `group:...`, or a service-account email; write is optional (default read-only).
+variable "extra_grants" {
+  description = "Real policy grants merged with the profile's base @example.com policy."
+  type = list(object({
+    principal = string
+    domains   = list(string)
+    write     = optional(bool, false)
+  }))
+  default = []
+}
+
 # --- Toggles: off for personal (near-zero idle cost), available for controlled ---
 
 variable "enable_observability" {

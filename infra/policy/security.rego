@@ -32,6 +32,21 @@ deny contains msg if {
 	msg := sprintf("IAM member %q would make a resource public; the brain must never be public", [member])
 }
 
+# OAuth is the one deliberate exception. To let remote MCP connectors discover and
+# call the brain, the Authorization Server (brain-auth) and the brain are public
+# (allUsers), with the OAuth bearer as the in-app gate (docs/oauth.md). Any *other*
+# module granting a public invoker is still a violation this catches.
+_oauth_public_modules := {"auth_service", "brain_service"}
+
+deny contains msg if {
+	some name, body in input.module
+	is_array(body.invoker_members)
+	some m in body.invoker_members
+	m in _public
+	not name in _oauth_public_modules
+	msg := sprintf("module.%s grants a public invoker %q; only the OAuth AS and the brain may be public", [name, m])
+}
+
 # Buckets must enforce uniform bucket-level access.
 deny contains msg if {
 	some name, body in input.resource.google_storage_bucket

@@ -12,6 +12,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    # Generates the OAuth AS signing key in-tenancy (stored in Secret Manager).
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   backend "gcs" {

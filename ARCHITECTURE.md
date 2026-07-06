@@ -346,6 +346,13 @@ their own tests, so a regression fails the build rather than shipping:
   private, the brain service is not public and requires an invoker, service
   accounts are least-privilege, and (controlled profile) that the VPC-SC perimeter
   and internal ingress are set. These run in CI and need no cloud.
+  - **OAuth exception.** Enabling remote MCP connectors (`enable_oauth`, personal
+    profile) is a deliberate, audited relaxation: the OAuth Authorization Server and
+    the brain become `allUsers`-reachable so hosted clients (Claude/ChatGPT) can
+    discover and call them, with the Google-brokered OAuth bearer as the in-app gate
+    instead of edge IAM. The conftest rule permits public ingress *only* on those two
+    services and still fails any other public invoker. The controlled profile stays
+    perimeter-internal and never opens. See [`docs/oauth.md`](docs/oauth.md).
 - **Supply chain and static analysis.** Dependency audit (`pip-audit`), Python
   SAST (`bandit`), and secret scanning (`gitleaks`) as standard maintained-project
   hygiene.

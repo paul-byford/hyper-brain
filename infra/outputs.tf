@@ -13,6 +13,11 @@ output "ui_url" {
   value       = module.ui_service.uri
 }
 
+output "auth_url" {
+  description = "The OAuth Authorization Server URL (empty when OAuth is disabled)."
+  value       = var.enable_oauth ? module.auth_service[0].uri : ""
+}
+
 output "index_bucket" {
   description = "The bucket holding the index artefacts."
   value       = module.storage.index_bucket

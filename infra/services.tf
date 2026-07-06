@@ -7,6 +7,8 @@ locals {
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "storage.googleapis.com",
+    # Holds the OAuth AS signing key and the upstream Google client credentials.
+    "secretmanager.googleapis.com",
   ]
 }
 

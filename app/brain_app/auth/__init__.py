@@ -21,14 +21,23 @@ from .tokens import (
     WrongIssuer,
     encode_hs256,
 )
-from .verify import GoogleOidcVerifier, HmacVerifier, TokenVerifier, get_verifier
+from .verify import (
+    CompositeVerifier,
+    GoogleOidcVerifier,
+    HmacVerifier,
+    OAuthJwtVerifier,
+    TokenVerifier,
+    get_verifier,
+)
 
 __all__ = [
     "PROPOSE_SCOPE",
+    "CompositeVerifier",
     "ExpiredToken",
     "GoogleOidcVerifier",
     "HmacVerifier",
     "Identity",
+    "OAuthJwtVerifier",
     "InvalidSignature",
     "MalformedToken",
     "NotYetValid",
