@@ -8,14 +8,19 @@ import base64
 import hashlib
 from urllib.parse import parse_qs, urlparse
 
-import jwt
 import pytest
-from starlette.testclient import TestClient
 
-from brain_app.oauth.app import build_app
-from brain_app.oauth.google import GoogleOidc
-from brain_app.oauth.issuer import TokenIssuer
-from brain_app.oauth.keys import SigningKey
+# The [oauth] extra (PyJWT) is optional; skip cleanly where it is not installed
+# (e.g. the offline evals job) instead of erroring collection.
+pytest.importorskip("jwt")
+
+import jwt  # noqa: E402
+from starlette.testclient import TestClient  # noqa: E402
+
+from brain_app.oauth.app import build_app  # noqa: E402
+from brain_app.oauth.google import GoogleOidc  # noqa: E402
+from brain_app.oauth.issuer import TokenIssuer  # noqa: E402
+from brain_app.oauth.keys import SigningKey  # noqa: E402
 
 ISSUER = "https://auth.example.com"
 RESOURCE = "https://brain.example.com"

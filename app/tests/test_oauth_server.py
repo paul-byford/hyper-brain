@@ -8,10 +8,15 @@ invoked (auth is enforced before any tool runs)."""
 from __future__ import annotations
 
 import pytest
-from starlette.testclient import TestClient
 
-from brain_app.auth import TokenError, identity_from_claims
-from brain_app.serving.server import build_server
+# The [mcp] extra (the MCP SDK) is optional; skip cleanly where it is not
+# installed (e.g. the offline evals job) instead of erroring collection.
+pytest.importorskip("mcp")
+
+from starlette.testclient import TestClient  # noqa: E402
+
+from brain_app.auth import TokenError, identity_from_claims  # noqa: E402
+from brain_app.serving.server import build_server  # noqa: E402
 
 AS = "https://auth.example.com"
 BRAIN = "https://brain.example.com"

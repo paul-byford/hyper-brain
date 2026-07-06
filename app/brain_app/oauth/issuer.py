@@ -105,7 +105,7 @@ class TokenIssuer:
             "client_id": client_id,
             "redirect_uris": list(redirect_uris),
             "client_name": client_name,
-            "token_endpoint_auth_method": "none",  # public client, PKCE only
+            "token_endpoint_auth_method": "none",  # nosec B105 - OAuth metadata value (public client, PKCE only)
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
             "client_id_issued_at": now,
@@ -233,7 +233,7 @@ class TokenIssuer:
         """The RFC 6749 token endpoint response body."""
         out = {
             "access_token": self.mint_access_token(sub=sub, email=email, scope=scope),
-            "token_type": "Bearer",
+            "token_type": "Bearer",  # nosec B105 - OAuth token-type label, not a secret
             "expires_in": self.access_ttl,
             "scope": scope,
         }

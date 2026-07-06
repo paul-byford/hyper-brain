@@ -10,8 +10,12 @@ import time
 
 import pytest
 
-from brain_app.auth import CompositeVerifier, OAuthJwtVerifier, TokenError
-from brain_app.oauth import SigningKey, TokenIssuer
+# The [oauth] extra (PyJWT) is optional; skip cleanly where it is not installed
+# (e.g. the offline evals job) instead of erroring collection.
+pytest.importorskip("jwt")
+
+from brain_app.auth import CompositeVerifier, OAuthJwtVerifier, TokenError  # noqa: E402
+from brain_app.oauth import SigningKey, TokenIssuer  # noqa: E402
 
 AS = "https://auth.example.com"
 BRAIN = "https://brain.example.com"

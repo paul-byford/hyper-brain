@@ -10,10 +10,15 @@ from __future__ import annotations
 import base64
 import hashlib
 
-import jwt
 import pytest
 
-from brain_app.oauth import (
+# The [oauth] extra (PyJWT) is optional; skip cleanly where it is not installed
+# (e.g. the offline evals job) instead of erroring collection.
+pytest.importorskip("jwt")
+
+import jwt  # noqa: E402
+
+from brain_app.oauth import (  # noqa: E402
     OAuthError,
     SigningKey,
     TokenIssuer,

@@ -23,23 +23,27 @@
     <nav class="pagetabs" id="pagetabs" aria-label="Page">
       <button data-page="connect" class="on">Connections</button>
       <button data-page="explore">Explore</button>
+      <button data-page="arch">Architecture</button>
     </nav>
     <div class="bar-right">
-      <div class="seg exp-only" id="modeseg" role="group" aria-label="View mode">
-        <button data-mode="explore" class="on">Explore</button>
-        <button data-mode="split">Split</button>
-        <button data-mode="read">Read</button>
-      </div>
-      <div class="idpill exp-only">
-        <label for="principal">Acting&nbsp;as</label>
-        <select id="principal" aria-label="Act as principal"></select>
-      </div>
       <div class="hashchip"><span class="livedot"></span> index <b id="hash">52aaa08ce4ae</b> · <span id="doccount">12</span> docs</div>
       <button class="themetgl" id="theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
     </div>
   </div>
 
   <div class="page" id="page-explore" hidden>
+  <div class="exptools">
+    <div class="seg" id="modeseg" role="group" aria-label="View mode">
+      <button data-mode="explore" class="on">Explore</button>
+      <button data-mode="split">Split</button>
+      <button data-mode="read">Read</button>
+    </div>
+    <div class="grow"></div>
+    <div class="idpill">
+      <label for="principal">Acting&nbsp;as</label>
+      <select id="principal" aria-label="Act as principal"></select>
+    </div>
+  </div>
   <div class="scope">
     <div class="lead">
       <span class="eyebrow">Read scope</span>
@@ -151,6 +155,134 @@
       <div class="archgrid" id="archgrid"></div>
       <p class="archclose">New connectors in, new surfaces out, and each one compounds. Onboard a wiki and every surface can answer from it; add a chat surface and it draws on everything already onboarded. The brain stays the governed centre, and its value grows with everything you connect to it.</p>
     </section>
+  </div>
+
+  <!-- ============================ ARCHITECTURE PAGE ============================ -->
+  <div class="page" id="page-arch" hidden>
+    <div class="sechead">
+      <span class="eyebrow">Reference architecture</span>
+      <h3>Hyper Brain on Google Cloud</h3>
+      <p>Every box is a resource in one Google Cloud project. Compute is scale-to-zero Cloud Run;
+        corpus, embeddings and answer synthesis never leave the tenancy. Only three things sit
+        outside it: the clients that call in, Google sign-in, and the content sources you ingest.</p>
+    </div>
+
+    <div class="a-band"><span class="eyebrow">Outside your cloud</span><span class="line"></span></div>
+    <div class="a-outside">
+      <div class="a-ext"><span class="nm">Remote MCP clients</span><span class="dt mono">Claude · ChatGPT custom connectors</span></div>
+      <div class="a-ext"><span class="nm">Sign in with Google</span><span class="dt mono">accounts.google.com · the AS's upstream IdP</span></div>
+      <div class="a-ext"><span class="nm">You</span><span class="dt mono">browser · gcloud · the brain CLI</span></div>
+      <div class="a-ext"><span class="nm">Content sources</span><span class="dt mono">web pages · git repos · files</span></div>
+    </div>
+
+    <div class="a-boundary">
+      <div class="bhead"><h3>Your Google Cloud project</h3><span class="note">◆ the data boundary · in-region, in-tenancy</span></div>
+      <div class="a-zones">
+        <div class="a-zone">
+          <div class="zh"><span class="adot adot-gold"></span><span class="k">Cloud Run · services</span><span class="sub">scale to zero</span></div>
+          <div class="zb">
+            <div class="a-node cat-gold"><div class="nn">brain</div><div class="nd">the MCP server; verifies OIDC/OAuth, enforces the domain ACL, serves five tools</div></div>
+            <div class="a-node cat-gold"><div class="nn">auth</div><div class="nd">OAuth 2.1 Authorization Server; DCR, PKCE, Google-brokered login, signs JWTs</div></div>
+            <div class="a-node cat-gold"><div class="nn">agent</div><div class="nd">Google ADK assistant; answers grounded, cited questions via the brain</div></div>
+            <div class="a-node cat-gold"><div class="nn">ui</div><div class="nd">Brain Explorer (nginx static): graph, search, this page</div></div>
+          </div>
+        </div>
+        <div class="a-zone">
+          <div class="zh"><span class="adot adot-gold"></span><span class="k">Cloud Run · jobs</span><span class="sub">on demand</span></div>
+          <div class="zb">
+            <div class="a-node cat-gold"><div class="nn">indexer</div><div class="nd">chunk + embed the corpus, build the wikilink graph, write the index</div></div>
+            <div class="a-node cat-gold"><div class="nn">ingest</div><div class="nd">fetch configured sources, land provenance-stamped markdown</div></div>
+          </div>
+        </div>
+        <div class="a-zone">
+          <div class="zh"><span class="adot adot-slate"></span><span class="k">Cloud Storage</span><span class="sub">private buckets</span></div>
+          <div class="zb">
+            <div class="a-node cat-slate"><div class="nn">corpus</div><div class="nd">markdown knowledge + staged proposals</div></div>
+            <div class="a-node cat-slate"><div class="nn">index</div><div class="nd">index.json · policy.yaml · sources.yaml</div></div>
+            <div class="a-node cat-slate"><div class="nn">tfstate</div><div class="nd">Terraform state (bootstrap bucket)</div></div>
+          </div>
+        </div>
+        <div class="a-zone">
+          <div class="zh"><span class="adot adot-pine"></span><span class="k">Vertex AI</span><span class="sub">in region</span></div>
+          <div class="zb">
+            <div class="a-node cat-pine"><div class="nn">embeddings</div><div class="nd">text-embedding for indexing + query</div></div>
+            <div class="a-node cat-pine"><div class="nn">Gemini</div><div class="nd">grounded answer synthesis with citations</div></div>
+            <div class="a-node cat-pine"><div class="nn">Document AI</div><div class="nd">PDF parsing on ingest</div></div>
+          </div>
+        </div>
+        <div class="a-zone">
+          <div class="zh"><span class="adot adot-clay"></span><span class="k">Secret Manager</span><span class="sub">secrets</span></div>
+          <div class="zb">
+            <div class="a-node cat-clay"><div class="nn">oauth-signing-key</div><div class="nd">RSA key the AS signs tokens with (generated in-tenancy)</div></div>
+            <div class="a-node cat-clay"><div class="nn">google-client-id / secret</div><div class="nd">upstream Sign in with Google credentials</div></div>
+          </div>
+        </div>
+        <div class="a-zone">
+          <div class="zh"><span class="adot adot-plum"></span><span class="k">Platform</span><span class="sub">cross-cutting</span></div>
+          <div class="zb">
+            <div class="a-node cat-plum"><div class="nn">Artifact Registry</div><div class="nd">the container images services + jobs run</div></div>
+            <div class="a-node cat-plum"><div class="nn">IAM</div><div class="nd">one least-privilege service account per workload</div></div>
+            <div class="a-node cat-plum"><div class="nn">Cloud Trace</div><div class="nd">end-to-end request spans (observability)</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="a-band"><span class="eyebrow">How it relates</span><span class="line"></span></div>
+    <div class="a-flows">
+      <div class="a-flow">
+        <div class="fh"><span class="n">01</span><span class="t">Add a remote connector (OAuth)</span><span class="d">paste a URL, sign in with Google</span></div>
+        <div class="a-chain">
+          <span class="a-chip out">Claude / ChatGPT</span>
+          <span class="a-arrow"><span class="lbl">GET /mcp</span>→</span><span class="a-chip acc">brain</span>
+          <span class="a-arrow"><span class="lbl">401 · discover</span>→</span><span class="a-chip acc">auth</span>
+          <span class="a-arrow"><span class="lbl">register · authorize</span>→</span><span class="a-chip out">Sign in with Google</span>
+          <span class="a-arrow"><span class="lbl">callback · token</span>→</span><span class="a-chip acc">auth</span>
+          <span class="a-arrow"><span class="lbl">bearer</span>→</span><span class="a-chip acc">brain</span>
+          <span class="a-arrow"><span class="lbl">verify (JWKS)</span>→</span><span class="a-chip">granted tools</span>
+        </div>
+      </div>
+      <div class="a-flow">
+        <div class="fh"><span class="n">02</span><span class="t">Answer a question</span><span class="d">scoped to the caller's domains</span></div>
+        <div class="a-chain">
+          <span class="a-chip out">client / agent / ui</span>
+          <span class="a-arrow"><span class="lbl">bearer</span>→</span><span class="a-chip acc">brain</span>
+          <span class="a-arrow"><span class="lbl">load</span>→</span><span class="a-chip">index bucket</span>
+          <span class="a-arrow"><span class="lbl">index + policy</span>→</span><span class="a-chip acc">brain</span>
+          <span class="a-arrow"><span class="lbl">synthesise</span>→</span><span class="a-chip">Vertex · Gemini</span>
+          <span class="a-arrow"><span class="lbl">grounded</span>→</span><span class="a-chip">cited answer</span>
+        </div>
+      </div>
+      <div class="a-flow">
+        <div class="fh"><span class="n">03</span><span class="t">Onboard content</span><span class="d">the ingest job</span></div>
+        <div class="a-chain">
+          <span class="a-chip out">web · git · files</span>
+          <span class="a-arrow"><span class="lbl">fetch</span>→</span><span class="a-chip acc">ingest</span>
+          <span class="a-arrow"><span class="lbl">parse · curate</span>→</span><span class="a-chip">Vertex · Document AI</span>
+          <span class="a-arrow"><span class="lbl">land</span>→</span><span class="a-chip">corpus bucket</span>
+        </div>
+      </div>
+      <div class="a-flow">
+        <div class="fh"><span class="n">04</span><span class="t">Build the index</span><span class="d">the indexer job</span></div>
+        <div class="a-chain">
+          <span class="a-chip">corpus bucket</span>
+          <span class="a-arrow"><span class="lbl">read</span>→</span><span class="a-chip acc">indexer</span>
+          <span class="a-arrow"><span class="lbl">embed</span>→</span><span class="a-chip">Vertex · embeddings</span>
+          <span class="a-arrow"><span class="lbl">write index.json</span>→</span><span class="a-chip">index bucket</span>
+        </div>
+      </div>
+      <div class="a-crosscut"><b>Cross-cutting:</b> every service and job runs as its <b>own least-privilege service account</b>; images come from <b>Artifact Registry</b>; requests are traced end to end in <b>Cloud Trace</b>. The corpus, the embeddings and the synthesis all stay inside your region and project, so sensitive content never reaches a third party. Idle cost is near zero: nothing runs until something asks.</div>
+    </div>
+
+    <div class="a-legend">
+      <span><i class="adot-gold"></i> Cloud Run (services + jobs)</span>
+      <span><i class="adot-slate"></i> Cloud Storage</span>
+      <span><i class="adot-pine"></i> Vertex AI</span>
+      <span><i class="adot-clay"></i> Secret Manager</span>
+      <span><i class="adot-plum"></i> Platform / IAM</span>
+      <span>▢ dashed = outside the tenancy</span>
+    </div>
+    <p class="a-foot">Personal profile shown. Controlled profile: internal ingress + VPC-SC perimeter, no public services.</p>
   </div>
 
   <!-- MCP connector modal (opened from the Embedded / API card) -->

@@ -13,7 +13,7 @@ import urllib.parse
 from collections.abc import Callable
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"  # nosec B105 - public endpoint URL, not a secret
 
 
 class GoogleOidc:

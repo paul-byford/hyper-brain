@@ -594,6 +594,7 @@ let graphSized = false;
 function setPage(p) {
   $("#page-explore").hidden = p !== "explore";
   $("#page-connect").hidden = p !== "connect";
+  $("#page-arch").hidden = p !== "arch";
   for (const b of $("#pagetabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === p);
   for (const el of document.querySelectorAll(".exp-only")) el.style.display = p === "explore" ? "" : "none";
   if (p === "connect") {
