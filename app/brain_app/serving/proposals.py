@@ -133,6 +133,35 @@ class GcsProposalGate:
         )
 
 
+class GcsCorpusGate:
+    """Lands a document **live** into the corpus bucket under its domain, no review.
+
+    Used only for personal-domain notes, which the caller owns, so there is nothing
+    to review. It writes ``{domain}/{slug}.md`` in the corpus bucket exactly where a
+    batch-ingested document would sit, so the next index build picks it up and it
+    becomes searchable within the index TTL (the same path any content takes)."""
+
+    def __init__(self, bucket: str, prefix: str = "") -> None:
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+
+    def submit(self, proposal: Proposal) -> ProposalResult:
+        from google.cloud import storage
+
+        parts = [self.prefix] if self.prefix else []
+        parts += [proposal.domain, f"{proposal.slug}.md"]
+        blob_path = "/".join(parts)
+        storage.Client().bucket(self.bucket).blob(blob_path).upload_from_string(proposal.content)
+        uri = f"gs://{self.bucket}/{blob_path}"
+        return ProposalResult(
+            status="saved",
+            path=uri,
+            branch=None,
+            checksum=proposal.checksum,
+            detail=f"saved to your personal space at {uri} (searchable after the next index build)",
+        )
+
+
 class GitBranchGate:
     """Lands a proposal on a fresh branch and returns to the original, so ``main``
     is never touched. The branch is the reviewable, revertible change."""

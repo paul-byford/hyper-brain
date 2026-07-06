@@ -50,7 +50,9 @@ def test_token_propose_scope_still_authorizes_writes():
 def test_a_write_grant_also_confers_read():
     policy = _policy(Grant("u@bank.com", (FINSERV,), write=True))
     identity = _ident()
-    assert read_domains(identity, policy) == {FINSERV}
+    # Read includes the granted domain plus the caller's own personal domain (every
+    # signed-in caller has one); the personal domain is never in the reviewed write set.
+    assert read_domains(identity, policy) == {FINSERV, "personal:u"}
     assert writable_domains(identity, policy) == {FINSERV}
 
 

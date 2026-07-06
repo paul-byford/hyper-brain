@@ -55,3 +55,32 @@ resource "google_storage_bucket" "index" {
     }
   }
 }
+
+# Sharing overlay: per-owner ``shares/{owner}.yaml`` objects the brain fully manages
+# (create, overwrite on re-share, delete on unshare). Kept out of the index bucket so
+# the brain stays read-only on the index it serves; here it owns the whole bucket.
+resource "google_storage_bucket" "shares" {
+  # checkov:skip=CKV_GCP_62: Access logging is controlled-profile hardening; the
+  # personal demo keeps near-zero cost. Buckets are private and versioned regardless.
+  name     = "${var.name_prefix}-shares-${var.project_id}"
+  project  = var.project_id
+  location = var.location
+  labels   = var.labels
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = var.force_destroy
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 5
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}

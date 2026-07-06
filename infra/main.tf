@@ -108,6 +108,7 @@ module "iam" {
   name_prefix   = var.name_prefix
   index_bucket  = module.storage.index_bucket
   corpus_bucket = module.storage.corpus_bucket
+  shares_bucket = module.storage.shares_bucket
 
   depends_on = [google_project_service.base]
 }
@@ -148,7 +149,13 @@ module "brain_service" {
     BRAIN_POLICY           = local.policy_uri
     BRAIN_PROPOSE_GATE     = "gcs"
     BRAIN_PROPOSALS_BUCKET = module.storage.corpus_bucket
-    BRAIN_OTEL             = local.otel_exporter
+    # Personal notes (add_note) land live into the caller's personal domain in the
+    # corpus bucket, so the next index build picks them up like any other content.
+    BRAIN_CORPUS_BUCKET = module.storage.corpus_bucket
+    # The dynamic sharing overlay: per-owner files in the dedicated shares bucket.
+    BRAIN_SHARES_STORE  = "gcs"
+    BRAIN_SHARES_BUCKET = module.storage.shares_bucket
+    BRAIN_OTEL          = local.otel_exporter
     # When the OAuth AS is live, accept both Google ID tokens (the agent) and our
     # AS's access tokens (remote connectors); otherwise Google only.
     }, local.oauth_live ? {

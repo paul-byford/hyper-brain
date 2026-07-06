@@ -34,7 +34,7 @@ def test_missing_or_malformed_bearer_refused():
         _bearer_from_context(_ctx({"authorization": "Basic abc"}))
 
 
-def test_server_registers_the_five_tools(index, embeddings):
+def test_server_registers_the_tools(index, embeddings):
     service = BrainService(index, embeddings, load_policy(prof="personal"))
     server = build_server(service, HmacVerifier("s"))
     tool_names = {t.name for t in asyncio.run(server.list_tools())}
@@ -44,4 +44,8 @@ def test_server_registers_the_five_tools(index, embeddings):
         "answer",
         "get_document",
         "propose_document",
+        "add_note",
+        "share",
+        "unshare",
+        "list_shares",
     }

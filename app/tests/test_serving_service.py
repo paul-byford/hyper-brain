@@ -20,7 +20,7 @@ from brain_app.serving import (
     WriteScopeError,
 )
 
-from .conftest import FINSERV, RECRUITMENT
+from .conftest import COMMONS, FINSERV, RECRUITMENT
 
 SECRET = "test-secret"
 
@@ -47,23 +47,25 @@ def _service(index, embeddings, policy, gate=None):
 
 def test_list_domains_is_scoped(index, embeddings, policy):
     svc = _service(index, embeddings, policy)
-    assert svc.list_domains(_identity(FINSERV_ENG)) == [FINSERV]
-    assert svc.list_domains(_identity(RECRUITER)) == [RECRUITMENT]
-    assert svc.list_domains(_identity(ADMIN)) == sorted([FINSERV, RECRUITMENT])
+    # Everyone also sees the commons domain (granted via the wildcard).
+    assert svc.list_domains(_identity(FINSERV_ENG)) == sorted([COMMONS, FINSERV])
+    assert svc.list_domains(_identity(RECRUITER)) == sorted([COMMONS, RECRUITMENT])
+    assert svc.list_domains(_identity(ADMIN)) == sorted([COMMONS, FINSERV, RECRUITMENT])
 
 
 def test_search_never_crosses_domain(index, embeddings, policy):
     svc = _service(index, embeddings, policy)
-    # A finserv-only caller asks a recruitment question: still only finserv comes back.
+    # A finserv caller asks a recruitment question: recruitment never comes back
+    # (commons is shared and may appear, but the other team's domain never does).
     results = svc.search(_identity(FINSERV_ENG), "candidate sourcing and interview copilots")
     assert results
-    assert all(r.domain == FINSERV for r in results)
+    assert all(r.domain != RECRUITMENT for r in results)
 
 
 def test_answer_citations_never_cross_domain(index, embeddings, policy):
     svc = _service(index, embeddings, policy)
     result = svc.answer(_identity(RECRUITER), "real-time fraud detection and trade surveillance")
-    assert all(c.domain == RECRUITMENT for c in result.citations)
+    assert all(c.domain != FINSERV for c in result.citations)
 
 
 def test_get_document_in_scope_succeeds(index, embeddings, policy):

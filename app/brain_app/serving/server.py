@@ -14,7 +14,7 @@ import os
 
 from mcp.server.fastmcp import Context, FastMCP
 
-from ..auth import TokenError, TokenVerifier
+from ..auth import ShareError, TokenError, TokenVerifier
 from ..models import Answer, SearchResult
 from .service import AccessError, BrainService, DocumentNotFound
 
@@ -173,6 +173,62 @@ def build_server(
             "detail": result.detail,
         }
 
+    @mcp.tool(
+        description=(
+            "Save a note into your own private personal space. Only you can see it "
+            "until you share it. Searchable once the index next rebuilds."
+        )
+    )
+    def add_note(title: str, content: str, ctx: Context, source_url: str | None = None) -> dict:
+        try:
+            result = service.add_note(
+                identity(ctx), title=title, content=content, source_url=source_url
+            )
+        except AccessError as exc:
+            raise PermissionError(str(exc)) from exc
+        return {
+            "status": result.status,
+            "path": result.path,
+            "checksum": result.checksum,
+            "detail": result.detail,
+        }
+
+    @mcp.tool(
+        description=(
+            "Share a domain or a single document you own with another person "
+            "(their email) or a group (group:name). Set write to let them add to it."
+        )
+    )
+    def share(
+        principal: str,
+        ctx: Context,
+        domain: str | None = None,
+        doc_id: str | None = None,
+        write: bool = False,
+    ) -> dict:
+        try:
+            return service.share(
+                identity(ctx), principal=principal, domain=domain, doc_id=doc_id, write=write
+            )
+        except DocumentNotFound as exc:
+            raise ValueError(f"document not found: {doc_id}") from exc
+        except (AccessError, ShareError) as exc:
+            raise PermissionError(str(exc)) from exc
+
+    @mcp.tool(description="Revoke a share you created. Returns how many were removed.")
+    def unshare(
+        principal: str,
+        ctx: Context,
+        domain: str | None = None,
+        doc_id: str | None = None,
+    ) -> dict:
+        removed = service.unshare(identity(ctx), principal=principal, domain=domain, doc_id=doc_id)
+        return {"removed": removed}
+
+    @mcp.tool(description="List what you have shared, and what has been shared with you.")
+    def list_shares(ctx: Context) -> dict:
+        return service.list_shares(identity(ctx))
+
     return mcp
 
 
@@ -184,15 +240,20 @@ def _load_service() -> BrainService:
     BRAIN_SYNTH (extractive|gemini), and the proposal gate (memory|git|gcs).
     Auth and its audience are read by get_verifier from BRAIN_AUTH*.
     """
+    from ..auth import get_shares_store
     from ..config import policy_source
     from ..embeddings import get_embeddings
     from ..retrieval import BrainIndex, get_synthesiser
-    from .proposals import get_gate
+    from .proposals import GcsCorpusGate, MemoryGate, get_gate
 
     index_path = os.environ.get("BRAIN_INDEX", ".brain/index.json")
     # BRAIN_POLICY may point at a gs:// object so grants take effect without a
     # rebuild; unset falls back to the profile's policy file baked in the image.
     source = policy_source(os.environ.get("BRAIN_POLICY"))
+    # Personal notes land live into the corpus bucket (owned, no review) when one is
+    # configured; otherwise they are recorded in-process (the safe local default).
+    corpus_bucket = os.environ.get("BRAIN_CORPUS_BUCKET")
+    note_gate = GcsCorpusGate(corpus_bucket) if corpus_bucket else MemoryGate()
     return BrainService(
         None,
         get_embeddings(),
@@ -202,6 +263,8 @@ def _load_service() -> BrainService:
         policy_source=source,
         # Lazy: the container starts before the index exists; loaded on first query.
         index_loader=lambda: BrainIndex.load(index_path),
+        shares_store=get_shares_store(),
+        note_gate=note_gate,
     )
 
 

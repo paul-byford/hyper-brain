@@ -12,6 +12,8 @@ CORPUS = REPO_ROOT / "corpus"
 
 FINSERV = "finserv-ai-engineering"
 RECRUITMENT = "enterprise-ai-recruitment"
+# The shared space granted to every signed-in caller via the wildcard grant.
+COMMONS = "commons"
 
 
 @pytest.fixture(scope="session")

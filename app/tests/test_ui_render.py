@@ -64,26 +64,27 @@ def test_explorer_renders_and_isolation_follows_identity(ui_server):
         page.wait_for_selector("canvas#graph", timeout=8000)
         page.wait_for_selector("#browser .domgroup", timeout=8000)
 
-        # Admin sees both domains (the graph is a canvas, so isolation is observed
-        # through the domain browser and the visible-document count).
+        # Admin sees every domain: both teams plus the shared commons (the graph is
+        # a canvas, so isolation is observed through the browser and the doc count).
         page.select_option("#principal", "group:brain-admins@example.com")
         page.wait_for_timeout(300)
-        assert page.locator("#browser .domgroup").count() == 2
+        assert page.locator("#browser .domgroup").count() == 3
         admin_docs = int(page.locator("#visN").inner_text())
 
-        # Switching to a single-domain identity shrinks the visible sub-graph.
+        # Switching to a single-team identity shrinks the visible sub-graph to that
+        # team plus commons (two domains, fewer documents than the admin sees).
         page.select_option("#principal", "group:finserv-eng@example.com")
         page.wait_for_timeout(300)
-        assert page.locator("#browser .domgroup").count() == 1
+        assert page.locator("#browser .domgroup").count() == 2
         fin_docs = int(page.locator("#visN").inner_text())
         assert fin_docs < admin_docs
 
-        # A recruitment query as the finserv caller never surfaces recruitment.
+        # A recruitment query as the finserv caller never surfaces recruitment
+        # (commons may appear, but the other team's domain never does).
         page.fill("#query", "candidate sourcing interview copilots hiring bias")
         page.wait_for_timeout(300)
         for meta in page.locator("#results .hit .meta").all_inner_texts():
             assert RECRUIT not in meta
-            assert FINSERV in meta
 
         assert not console_errors, console_errors
     finally:

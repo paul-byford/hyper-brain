@@ -60,7 +60,8 @@ def test_service_operations_emit_spans(spans, index, embeddings):
     assert "brain.search" in by_name
     assert "brain.answer" in by_name
     search_span = by_name["brain.search"]
-    assert search_span.attributes["brain.domain_count"] == 1
+    # The finserv caller sees their domain plus the shared commons domain.
+    assert search_span.attributes["brain.domain_count"] == 2
     assert search_span.attributes["brain.result_count"] >= 1
     assert by_name["brain.answer"].attributes["brain.principal"] == "u"
 

@@ -42,10 +42,20 @@ resource "google_storage_bucket_iam_member" "brain_index_read" {
 }
 
 # Brain may create (not overwrite) objects in the corpus bucket, so the gated
-# propose_document tool can stage a quarantined proposal under proposals/ for review.
+# propose_document tool can stage a quarantined proposal under proposals/ for review,
+# and add_note can land a personal note into the caller's own personal domain.
 resource "google_storage_bucket_iam_member" "brain_corpus_propose" {
   bucket = var.corpus_bucket
   role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.brain.email}"
+}
+
+# Brain fully owns the shares bucket: it creates, overwrites (re-share) and deletes
+# (unshare) per-owner overlay files there. Kept separate from the index bucket so the
+# brain stays read-only on the index it serves.
+resource "google_storage_bucket_iam_member" "brain_shares_admin" {
+  bucket = var.shares_bucket
+  role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.brain.email}"
 }
 

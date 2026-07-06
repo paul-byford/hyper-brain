@@ -38,9 +38,18 @@ def search(
     *,
     top_k: int = 5,
     expand_links: bool = True,
+    extra_doc_ids: Iterable[str] = (),
 ) -> list[SearchResult]:
     allowed = set(allowed_domains)
-    candidates = [i for i, chunk in enumerate(index.chunks) if chunk.domain in allowed]
+    # Individual documents shared with the caller (doc-level shares) are admitted
+    # even though their domain is not in ``allowed``. Link expansion stays scoped to
+    # ``allowed`` only, so a shared document never drags its (unshared) neighbours in.
+    extra_docs = set(extra_doc_ids)
+    candidates = [
+        i
+        for i, chunk in enumerate(index.chunks)
+        if chunk.domain in allowed or chunk.doc_id in extra_docs
+    ]
     if not candidates:
         return []
 

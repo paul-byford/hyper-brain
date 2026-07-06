@@ -5,3 +5,7 @@ output "corpus_bucket" {
 output "index_bucket" {
   value = google_storage_bucket.index.name
 }
+
+output "shares_bucket" {
+  value = google_storage_bucket.shares.name
+}

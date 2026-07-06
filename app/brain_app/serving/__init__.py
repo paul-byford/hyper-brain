@@ -9,6 +9,7 @@ proposals through a review gate (proposals.py), never as a live write to main.
 from __future__ import annotations
 
 from .proposals import (
+    GcsCorpusGate,
     GcsProposalGate,
     GitBranchGate,
     MemoryGate,
@@ -30,6 +31,7 @@ __all__ = [
     "BrainService",
     "DocumentNotFound",
     "DomainNotAuthorized",
+    "GcsCorpusGate",
     "GcsProposalGate",
     "GitBranchGate",
     "MemoryGate",

@@ -8,10 +8,19 @@ version: 1
 # Every domain that exists in this brain. A grant can only widen access to a
 # domain named here.
 domains:
+  - commons
   - finserv-ai-engineering
   - enterprise-ai-recruitment
 
 grants:
+  # Commons: the shared space every signed-in caller can read. The wildcard '*'
+  # matches any authenticated identity (the brain is never anonymous). It can only
+  # ever reach the declared 'commons' domain here, never anyone's personal domain,
+  # which is derived from identity and never named in this policy.
+  - principal: "*"
+    domains:
+      - commons
+
   # The provisioner / admins see everything, and may also propose documents
   # (write: true). Write is separate from read: omit write and a grant is read-only.
   # A Google OIDC identity is authorised to write purely by this flag -- no special

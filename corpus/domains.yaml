@@ -2,6 +2,12 @@
 # from domains their identity is granted in the active policy file.
 version: 1
 domains:
+  - id: commons
+    title: Commons
+    description: >
+      The shared space every signed-in person can read: getting started, company
+      handbook material, and anything intended for everyone. Granted to all via the
+      wildcard in the policy. Personal and team domains sit alongside it.
   - id: finserv-ai-engineering
     title: Modern AI engineering for financial services
     description: >

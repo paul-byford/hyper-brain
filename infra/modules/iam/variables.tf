@@ -13,3 +13,7 @@ variable "index_bucket" {
 variable "corpus_bucket" {
   type = string
 }
+
+variable "shares_bucket" {
+  type = string
+}

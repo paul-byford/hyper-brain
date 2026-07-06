@@ -251,6 +251,36 @@ adds the person to the invoker group and the domain ACL; the person runs
 `brain connect`, which prints the MCP config block (or points their ADK agent at
 the endpoint). No per-user infrastructure.
 
+**Four kinds of domain, one mechanism.** A domain is the unit of access; who a
+grant names is the only thing that varies:
+
+- **Commons** — a grant to the wildcard `*` in the base policy, so every signed-in
+  caller can read it (onboarding, handbook). The brain is never anonymous, so `*`
+  means "any authenticated caller."
+- **Personal** — `personal:{subject}`, derived from the caller's stable subject,
+  never named in the policy. Every caller reads and writes their own; `add_note`
+  lands notes here ungated (you own it). Because it is never a declared domain,
+  `domains_for` (which intersects with the declared set) means a `*` grant can
+  **never** reach anyone's personal domain: the load-bearing invariant of the
+  personal space.
+- **Team / org** — an email or `group:` grant in the base policy (`tfvars`),
+  admin-owned and slow-changing.
+- **Shared** — dynamic, user-authored grants in a **sharing overlay**, merged over
+  the base policy at request time. A user shares a domain or a single document they
+  own with a person or group (`share`), revokes it (`unshare`), and what they never
+  share stays private for good. The overlay lives as per-owner
+  `shares/{owner}.yaml` objects in a dedicated shares bucket the brain fully owns
+  (so the index bucket it serves stays read-only). Two rules the base policy does
+  not need: a share principal is never `*` (opening content to everyone is an admin
+  act in the base policy), and a user can only share content they own or may write,
+  never re-share what was merely shared to them. Doc-level shares admit exactly one
+  document without dragging in its domain neighbours; link expansion stays scoped to
+  the caller's own domains.
+
+A brand-new Google user with no team grant is therefore never a dead end: they land
+on commons (content to start using) plus their own empty personal space (a place to
+write), and see anything shared with them alongside their own domains.
+
 ---
 
 ## 8. The agent (Google ADK)

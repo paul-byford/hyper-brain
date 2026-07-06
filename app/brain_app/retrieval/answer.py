@@ -123,6 +123,9 @@ def answer(
     synthesiser: Synthesiser | None = None,
     *,
     top_k: int = 5,
+    extra_doc_ids: Iterable[str] = (),
 ) -> Answer:
-    results = search(index, query, allowed_domains, embeddings, top_k=top_k)
+    results = search(
+        index, query, allowed_domains, embeddings, top_k=top_k, extra_doc_ids=extra_doc_ids
+    )
     return (synthesiser or ExtractiveSynthesiser()).synthesise(query, results)
