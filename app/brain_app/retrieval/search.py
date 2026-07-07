@@ -30,6 +30,37 @@ def _ranks(scores: list[float]) -> list[int]:
     return ranks
 
 
+def _contains_seq(haystack: list[str], needle: list[str]) -> bool:
+    """Whether ``needle`` appears as a contiguous run in ``haystack`` (token-wise, so
+    'code' does not match 'encode')."""
+    n = len(needle)
+    if n == 0 or n > len(haystack):
+        return False
+    return any(haystack[i : i + n] == needle for i in range(len(haystack) - n + 1))
+
+
+def title_boost(query_tokens: list[str], title: str) -> float:
+    """A bonus for documents whose *title* matches the query, so a literal match (for
+    example a query that is exactly a document's title) ranks above merely
+    semantically-similar documents. Added on top of the fused hybrid score.
+
+    Tiered: the query is a phrase in the title (1.0) > every query word is in the
+    title (0.6) > a fraction of query words are in the title (up to 0.4). The RRF
+    scores it adds to are ~0.02-0.05, so a title match reliably wins without erasing
+    semantic recall for queries that are not titles.
+    """
+    if not query_tokens:
+        return 0.0
+    title_tokens = tokenize(title or "")
+    if _contains_seq(title_tokens, query_tokens):
+        return 1.0
+    title_set = set(title_tokens)
+    if all(t in title_set for t in query_tokens):
+        return 0.6
+    covered = sum(1 for t in query_tokens if t in title_set) / len(query_tokens)
+    return 0.4 * covered
+
+
 def search(
     index: BrainIndex,
     query: str,
@@ -59,14 +90,24 @@ def search(
     query_vec = query_vec / norm
     semantic = (index.embeddings[candidates] @ query_vec).tolist()
 
-    # Keyword signal.
-    keyword = BM25([tokenize(index.chunks[i].text) for i in candidates]).scores(query)
+    # Keyword signal. Title and heading are included (not just the body), so a query
+    # that matches a document's title scores on the keyword axis too.
+    keyword = BM25(
+        [
+            tokenize(f"{index.chunks[i].text} {index.chunks[i].heading} {index.chunks[i].title}")
+            for i in candidates
+        ]
+    ).scores(query)
 
-    # Fuse by reciprocal rank.
+    # Fuse by reciprocal rank, then add a title-match boost so a literal match ranks
+    # above merely semantically-similar documents.
+    query_tokens = tokenize(query)
     semantic_ranks = _ranks(semantic)
     keyword_ranks = _ranks(keyword)
     fused = [
-        1.0 / (_RRF_K + semantic_ranks[p]) + 1.0 / (_RRF_K + keyword_ranks[p])
+        1.0 / (_RRF_K + semantic_ranks[p])
+        + 1.0 / (_RRF_K + keyword_ranks[p])
+        + title_boost(query_tokens, index.chunks[candidates[p]].title)
         for p in range(len(candidates))
     ]
     order = sorted(range(len(candidates)), key=lambda p: fused[p], reverse=True)

@@ -22,6 +22,10 @@ import { api, fileToBase64 } from "./live.js";
 // Live mode is on when the deployed config carries the brain REST base + OAuth issuer.
 // Until a visitor signs in they see the public landing page; after, real per-user data.
 let LIVE = false, API = null, ME = null;
+// Notes/uploads land in the corpus and are searchable only after the next index
+// build, so a just-created note is not in /api/documents yet. We show it optimistically
+// here (marked pending) so the user sees it immediately.
+let PENDING_NOTES = [];
 
 const $ = (sel) => document.querySelector(sel);
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -145,7 +149,7 @@ async function bootLive() {
   // Live chrome: show who is signed in, hide the "Acting as" simulator, offer review.
   $("#userchip").hidden = false;
   $("#username").textContent = friendly(state.principal);
-  $("#signout").addEventListener("click", () => { signOut(); window.location.reload(); });
+  $("#signout").addEventListener("click", () => { broadcast("signout"); signOut(); window.location.reload(); });
   const idpill = document.querySelector("#page-explore .idpill");
   if (idpill) idpill.style.display = "none";
   const canReview = (ME.writable || []).length > 0;
@@ -153,7 +157,9 @@ async function bootLive() {
 
   buildGraph();
   fillMcp();
-  initPersonal();
+  // Note: initPersonal() (the demo simulator + its handlers) is deliberately NOT
+  // called in live mode; wireLive() owns the live personal actions instead.
+  $("#sharespace").hidden = true; // demo share flow needs simulated principals
   wireStatic();
   wireLive();
 
@@ -163,36 +169,82 @@ async function bootLive() {
   renderPersonal();
   renderConnections();
   loop();
+  initLiveChannel(); // cross-tab pending-note updates (same browser)
+  startLivePoll(); // keep this tab current (picks up content added anywhere)
   setPage("explore"); // Go straight into the tool.
 }
 
-// ---- Live-mode rendering (REST-backed) --------------------------------------
-async function liveResults(q) {
+// ---- Live-mode search (REST-backed) -----------------------------------------
+// Retrieval is fast, so it runs as you type (debounced, latest-wins). The grounded
+// answer is a Gemini call, so it runs only on Enter, not on every keystroke.
+let liveSearchTimer = null;
+let liveSearchSeq = 0;
+
+function scheduleLiveSearch() {
+  clearTimeout(liveSearchTimer);
+  const q = state.query.trim();
+  if (!q) { liveSearchSeq++; $("#results").innerHTML = ""; return; }
+  liveSearchTimer = setTimeout(() => runLiveSearch(q, false), 250);
+}
+
+function submitLiveSearch() {
+  clearTimeout(liveSearchTimer);
+  const q = state.query.trim();
+  if (!q) { liveSearchSeq++; $("#results").innerHTML = ""; return; }
+  runLiveSearch(q, true); // Enter: also compose a grounded answer
+}
+
+// Collapse chunk-level hits to one entry per document (best-ranked chunk wins).
+function dedupeByDoc(results) {
+  const seen = new Set(); const out = [];
+  for (const r of results) { if (seen.has(r.doc_id)) continue; seen.add(r.doc_id); out.push(r); }
+  return out;
+}
+
+async function runLiveSearch(q, withAnswer) {
+  const seq = ++liveSearchSeq; // any newer query invalidates this one
   const box = $("#results");
   box.innerHTML = '<p class="empty">searching…</p>';
-  try {
-    const [results, ans] = await Promise.all([API.search(q), API.answer(q)]);
-    if (!results.length) {
-      box.innerHTML = `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Answer</span></div><p>${esc(ans.text)}</p></div>`;
-      return;
-    }
-    const dom = results[0].domain;
-    let html = `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Grounded answer · ${esc(dom)}</span></div>`;
+  let results;
+  try { results = await API.search(q); }
+  catch (e) { if (seq === liveSearchSeq) box.innerHTML = `<p class="empty">${esc(e.message || String(e))}</p>`; return; }
+  if (seq !== liveSearchSeq) return; // superseded while awaiting
+  const docs = dedupeByDoc(results);
+  renderLiveResults(box, docs, null, withAnswer);
+  if (withAnswer && docs.length) {
+    let ans = null;
+    try { ans = await API.answer(q); } catch { /* keep the hits, drop the answer */ }
+    if (seq !== liveSearchSeq) return;
+    renderLiveResults(box, docs, ans, true);
+  }
+}
+
+function renderLiveResults(box, docs, ans, withAnswer) {
+  if (!docs.length) {
+    box.innerHTML = `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Answer</span></div><p>${esc((ans && ans.text) || "No results in the domains you can see.")}</p></div>`;
+    return;
+  }
+  let html = "";
+  if (ans) {
+    html += `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Grounded answer · ${esc(docs[0].domain)}</span></div>`;
     html += `<p>${esc(ans.text)}</p>`;
     html += `<div class="cites">${(ans.citations || []).map((c) => `<span class="cite" data-doc="${c.doc_id}">↳ ${esc(short(c.doc_id))}</span>`).join("")}</div>`;
     if ((ans.gaps || []).length) html += `<div class="gaps">gaps · not supported by retrieved context: ${ans.gaps.map(esc).join(", ")}</div>`;
-    html += `</div><div class="hits">`;
-    for (const r of results) {
-      const snip = esc(stripWiki(r.text).slice(0, 130));
-      html += `<div class="hit" data-doc="${r.doc_id}"><div class="meta"><span class="dot" style="background:var(${domVar(r.domain)})"></span>${esc(r.domain)} · ${esc(r.heading || "-")}</div>
-        <div class="htitle">${esc(r.title)}</div><div class="snip">${snip}…</div></div>`;
-    }
     html += `</div>`;
-    box.innerHTML = html;
-    box.querySelectorAll("[data-doc]").forEach((a) => a.addEventListener("click", () => openDocument(a.dataset.doc)));
-  } catch (e) {
-    box.innerHTML = `<p class="empty">${esc(e.message || String(e))}</p>`;
+  } else if (withAnswer) {
+    html += `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Grounded answer</span></div><p class="empty">composing…</p></div>`;
+  } else {
+    html += `<div class="answerhint mono">Press Enter for a grounded, cited answer.</div>`;
   }
+  html += `<div class="hits">`;
+  for (const r of docs) {
+    const snip = esc(stripWiki(r.text).slice(0, 130));
+    html += `<div class="hit" data-doc="${r.doc_id}"><div class="meta"><span class="dot" style="background:var(${domVar(r.domain)})"></span>${esc(r.domain)} · ${esc(r.heading || "-")}</div>
+      <div class="htitle">${esc(r.title)}</div><div class="snip">${snip}…</div></div>`;
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+  box.querySelectorAll("[data-doc]").forEach((a) => a.addEventListener("click", () => openDocument(a.dataset.doc)));
 }
 
 async function renderDocLive(d) {
@@ -225,7 +277,16 @@ function renderPersonalLive() {
   if (list) {
     list.innerHTML = "";
     const notes = index.documents.filter((d) => d.domain === pd);
-    if (!notes.length) list.innerHTML = '<li class="empty" style="padding:6px 2px">No notes yet. Add one or upload a file — only you will see it.</li>';
+    const indexedTitles = new Set(notes.map((n) => n.title));
+    // Just-created notes/uploads not yet in the index, shown as pending.
+    const pending = PENDING_NOTES.filter((p) => !indexedTitles.has(p.title));
+    if (!notes.length && !pending.length) list.innerHTML = '<li class="empty" style="padding:6px 2px">No notes yet. Add one or upload a file. Only you will see it.</li>';
+    for (const p of pending) {
+      const li = document.createElement("li"); li.className = "pnote";
+      // A (non-interactive) button, matching the real notes below, so it aligns.
+      li.innerHTML = `<div class="pnote-row"><button type="button" class="pnote-title" disabled><span class="dot personal-dot"></span><span class="t">${esc(p.title)}</span></button><span class="kindbadge kind-personal">pending index</span></div>`;
+      list.appendChild(li);
+    }
     for (const n of notes) {
       const li = document.createElement("li"); li.className = "pnote";
       const row = document.createElement("div"); row.className = "pnote-row";
@@ -281,15 +342,47 @@ async function renderReview() {
   }
 }
 
+// Same-origin tabs share a channel, so a note added in one tab shows immediately as
+// pending in the others (before it is indexed and visible to the server). Scoped to
+// the signed-in subject so two different users' tabs never cross.
+let liveChannel = null;
+function initLiveChannel() {
+  if (!("BroadcastChannel" in window)) return;
+  liveChannel = new BroadcastChannel("hyper-brain-live");
+  liveChannel.addEventListener("message", (e) => {
+    const m = e.data || {};
+    if (m.sub !== (ME.you && ME.you.subject)) return; // ignore other users' tabs
+    if (m.type === "signout") { signOut(); window.location.reload(); return; }
+    if (m.type === "pending" && m.title) {
+      const pd = ME.personal && ME.personal.domain;
+      const known = PENDING_NOTES.some((p) => p.title === m.title) ||
+        index.documents.some((d) => d.domain === pd && d.title === m.title);
+      if (known) return;
+      PENDING_NOTES.unshift({ title: m.title });
+      renderPersonal();
+      startLivePoll(); // this tab now polls too, so it resolves when indexed
+    }
+  });
+}
+function broadcast(type, extra) {
+  if (liveChannel) liveChannel.postMessage({ type, sub: ME.you && ME.you.subject, ...extra });
+}
+function broadcastPending(title) { broadcast("pending", { title }); }
+
 // Wire the live-only actions (add note, upload, share space) to the REST facade.
 function wireLive() {
   $("#addnote").addEventListener("click", () => { $("#notemodal").hidden = false; $("#notetitle").focus(); });
   $("#notedo").addEventListener("click", async () => {
     const title = $("#notetitle").value.trim(), content = $("#notebody").value.trim();
     if (!title && !content) return;
+    const noteTitle = title || "Untitled note";
     $("#notemodal").hidden = true; $("#notetitle").value = ""; $("#notebody").value = "";
-    try { await API.note(title || "Untitled note", content); await reloadLiveDocs("Note saved."); }
-    catch (e) { flashUpload(String(e.message || e)); }
+    try {
+      await API.note(noteTitle, content);
+      PENDING_NOTES.unshift({ title: noteTitle });
+      broadcastPending(noteTitle);
+      await reloadLiveDocs("Note saved to your personal space. indexing now, searchable in a few minutes.");
+    } catch (e) { flashUpload(String(e.message || e)); }
   });
   document.querySelectorAll("[data-close-note]").forEach((el) => el.addEventListener("click", () => { $("#notemodal").hidden = true; }));
 
@@ -301,7 +394,9 @@ function wireLive() {
       const b64 = await fileToBase64(file);
       await API.upload(file.name, b64);
       $("#fileinput").value = "";
-      await reloadLiveDocs(`Uploaded ${file.name}. Searchable after the next index build.`);
+      PENDING_NOTES.unshift({ title: file.name });
+      broadcastPending(file.name);
+      await reloadLiveDocs(`Uploaded ${file.name}. indexing now, searchable in a few minutes.`);
     } catch (err) { flashUpload(String(err.message || err)); }
   });
 }
@@ -312,13 +407,72 @@ function flashUpload(msg) {
 
 async function reloadLiveDocs(msg) {
   const docs = await API.documents();
+  applyLiveDocs(docs);
+  if (msg) flashUpload(msg);
+  startLivePoll(); // keep refreshing until the pending note is indexed
+}
+
+// Replace the in-memory index with a fresh document set and re-render everything.
+// Pending notes that have now been indexed are dropped (they are real docs again),
+// and any newly-indexed document is added to the knowledge graph in place.
+function applyLiveDocs(docs) {
   const adjacency = {};
   for (const d of docs) adjacency[d.doc_id] = d.links || [];
   index = { documents: docs, adjacency, chunks: [], content_hash: "" };
   byId = new Map(docs.map((d) => [d.doc_id, d]));
+  const domains = [...new Set(docs.map((d) => d.domain))].sort();
+  DOMAIN_ORDER = domains;
+  domIdx = new Map(domains.map((d, i) => [d, i]));
+  state.allowed = new Set(domains);
+  const pd = ME.personal && ME.personal.domain;
+  const indexedTitles = new Set(docs.filter((d) => d.domain === pd).map((d) => d.title));
+  PENDING_NOTES = PENDING_NOTES.filter((p) => !indexedTitles.has(p.title));
   $("#doccount").textContent = docs.length;
-  renderBrowser(); renderPersonal();
-  if (msg) flashUpload(msg);
+  syncLiveGraph();
+  renderScope(); renderBrowser(); renderLegend(); renderPersonal();
+}
+
+// Add any new document as a graph node without disturbing the existing layout, then
+// rebuild the edges from the current links. Nudges the simulation so it settles.
+function syncLiveGraph() {
+  let added = false;
+  for (const d of index.documents) {
+    if (nodeById.has(d.doc_id)) continue;
+    const degree = (index.adjacency[d.doc_id] || []).length;
+    const cx = W > 0 ? clusterX(d.domain) : (W || 600) * 0.5;
+    const n = {
+      id: d.doc_id, domain: d.domain, title: d.title,
+      x: cx + (Math.random() - 0.5) * 90, y: (H > 0 ? H : 600) * 0.5 + (Math.random() - 0.5) * 90,
+      vx: 0, vy: 0, r: degree >= 4 ? 11 : 8, vis: 1, target: 1, pinned: false,
+    };
+    nodes.push(n); nodeById.set(n.id, n); added = true;
+  }
+  const gd = graphData(index.documents, index.adjacency, new Set(DOMAIN_ORDER));
+  EDGES = gd.links.map((l) => ({ a: l.source, b: l.target }));
+  adj = new Map(nodes.map((n) => [n.id, new Set()]));
+  for (const e of EDGES) { if (adj.has(e.a) && adj.has(e.b)) { adj.get(e.a).add(e.b); adj.get(e.b).add(e.a); } }
+  if (added) alpha = Math.max(alpha, 0.6);
+  relightGraph();
+}
+
+// Keep the view current: poll for the indexed document set so a pending note (on the
+// tab that added it) flips to a real, searchable document once the rebuild finishes,
+// and so any *other* open tab picks up new content on its own. Polls only while the
+// tab is visible, and only re-renders when the document set actually changed.
+let livePollTimer = null;
+function startLivePoll() {
+  if (livePollTimer || !LIVE) return;
+  livePollTimer = setInterval(async () => {
+    if (document.hidden) return;
+    let docs;
+    try { docs = await API.documents(); } catch { return; }
+    if (docs.length === index.documents.length) return; // steady: nothing new
+    const hadPending = PENDING_NOTES.length;
+    applyLiveDocs(docs);
+    if (hadPending && PENDING_NOTES.length < hadPending) {
+      flashUpload("Indexed. Your note is searchable now.");
+    }
+  }, 20000);
 }
 
 // ---- Principal + scope ------------------------------------------------------
@@ -754,10 +908,11 @@ function renderDoc() {
 
 // ---- Search / answer (scoped to allowed domains via lib.js) -----------------
 function renderResults() {
-  const box = $("#results"); const q = state.query.trim();
+  const box = $("#results");
   if (!box) return;
+  if (LIVE) { scheduleLiveSearch(); return; }
+  const q = state.query.trim();
   if (!q) { box.innerHTML = ""; return; }
-  if (LIVE) { liveResults(q); return; }
   const hits = rankChunks(index.chunks, q, state.allowed, 8);
   const ans = extractiveAnswer(q, hits);
   if (!hits.length) {
@@ -770,7 +925,10 @@ function renderResults() {
   html += `<div class="cites">${ans.citations.map((c) => `<span class="cite" data-doc="${c.doc_id}">↳ ${esc(short(c.doc_id))}</span>`).join("")}</div>`;
   if (ans.gaps.length) html += `<div class="gaps">gaps · not supported by retrieved context: ${ans.gaps.map(esc).join(", ")}</div>`;
   html += `</div><div class="hits">`;
+  const seenDocs = new Set();
   for (const { chunk } of hits) {
+    if (seenDocs.has(chunk.doc_id)) continue; // one entry per document
+    seenDocs.add(chunk.doc_id);
     const snip = esc(stripWiki(chunk.text).slice(0, 130));
     html += `<div class="hit" data-doc="${chunk.doc_id}"><div class="meta"><span class="dot" style="background:var(${domVar(chunk.domain)})"></span>${esc(chunk.domain)} · ${esc(chunk.heading || "-")}</div>
       <div class="htitle">${esc(chunk.title)}</div><div class="snip">${snip}…</div></div>`;
@@ -1056,9 +1214,15 @@ function wireStatic() {
   canvas.addEventListener("click", (ev) => { const p = pos(ev); const n = nodeAt(p.x, p.y); if (n) openDocument(n.id); });
   canvas.addEventListener("mouseleave", () => { hover = null; tip.classList.remove("on"); });
 
-  // search
+  // search: type to filter (debounced in live mode); Enter for a grounded answer.
   const qEl = $("#query");
   qEl.addEventListener("input", () => { state.query = qEl.value; renderResults(); });
+  qEl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    state.query = qEl.value;
+    if (LIVE) submitLiveSearch(); else renderResults();
+  });
 
   // theme
   $("#theme").addEventListener("click", () => {

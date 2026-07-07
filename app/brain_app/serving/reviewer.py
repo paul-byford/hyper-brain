@@ -52,7 +52,6 @@ class MemoryReviewer:
         self.prefix = prefix.strip("/")
         self.staged = dict(staged or {})
         self.live: dict[str, bytes] = {}
-        self.reindexed = 0
 
     def list_proposals(self) -> list[ProposalRef]:
         return [_ref(name, self.prefix) for name in sorted(self.staged)]
@@ -62,23 +61,16 @@ class MemoryReviewer:
             raise FileNotFoundError(name)
         dest = live_name(name, self.prefix)
         self.live[dest] = self.staged.pop(name)
-        self.reindexed += 1
         return dest
 
 
 class GcsReviewer:
-    """Promotes proposals in the corpus bucket and triggers the indexer Job.
+    """Promotes proposals in the corpus bucket: copy to the live path, delete the
+    staged one. The reindex that follows is triggered by the service (``reindex``),
+    not here, so all live writes share one reindex path."""
 
-    Uses google-cloud-storage to move the object (copy to the live path, delete the
-    staged one) and an authorised call to the Cloud Run Admin API to run the index
-    Job. Both use the brain service account's own credentials.
-    """
-
-    def __init__(
-        self, bucket: str, indexer_job: str | None = None, prefix: str = "proposals"
-    ) -> None:
+    def __init__(self, bucket: str, prefix: str = "proposals") -> None:
         self.bucket = bucket
-        self.indexer_job = indexer_job  # projects/P/locations/L/jobs/J
         self.prefix = prefix.strip("/")
 
     def _bucket(self):
@@ -99,24 +91,10 @@ class GcsReviewer:
         source = bucket.blob(name)
         bucket.copy_blob(source, bucket, new_name=dest)
         source.delete()
-        self._run_indexer()
         return dest
-
-    def _run_indexer(self) -> None:
-        if not self.indexer_job:
-            return
-        import google.auth
-        from google.auth.transport.requests import AuthorizedSession
-
-        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        session = AuthorizedSession(creds)
-        resp = session.post(f"https://run.googleapis.com/v2/{self.indexer_job}:run")
-        resp.raise_for_status()
 
 
 def get_reviewer() -> Reviewer:
     """GCS-backed when a corpus bucket is configured (deployed), else in-process."""
     bucket = os.environ.get("BRAIN_CORPUS_BUCKET")
-    if not bucket:
-        return MemoryReviewer()
-    return GcsReviewer(bucket, indexer_job=os.environ.get("BRAIN_INDEXER_JOB"))
+    return GcsReviewer(bucket) if bucket else MemoryReviewer()

@@ -320,6 +320,7 @@ def _load_service() -> BrainService:
     from ..retrieval import BrainIndex, get_synthesiser
     from .attachments import get_attachment_store
     from .proposals import GcsCorpusGate, MemoryGate, get_gate
+    from .reindex import get_reindexer
     from .reviewer import get_reviewer
 
     index_path = os.environ.get("BRAIN_INDEX", ".brain/index.json")
@@ -343,6 +344,7 @@ def _load_service() -> BrainService:
         note_gate=note_gate,
         attachment_store=get_attachment_store(),
         reviewer=get_reviewer(),
+        reindexer=get_reindexer(),
     )
 
 

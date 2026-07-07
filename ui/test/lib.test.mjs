@@ -42,6 +42,11 @@ assert.ok(inDomain.every((h) => h.chunk.domain !== RECRUIT), "search must never 
 const crossQuery = rankChunks(index.chunks, "candidate sourcing interview copilots recruiting", finAllowed, 8);
 assert.ok(crossQuery.every((h) => h.chunk.domain !== RECRUIT), "finserv caller must never see recruitment");
 
+// --- ranking: a literal title match ranks first ---
+const titled = rankChunks(index.chunks, "model risk governance", finAllowed, 8);
+assert.ok(titled.length > 0 && titled[0].chunk.doc_id === `${FINSERV}/model-risk-governance-llms`,
+  "a query matching a document title should rank that document first");
+
 // --- graph is filtered to the caller's sub-graph ---
 const gFin = graphData(index.documents, index.adjacency, finAllowed);
 assert.ok(gFin.nodes.length > 0 && gFin.links.length > 0, "expected a finserv sub-graph");

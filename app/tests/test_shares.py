@@ -216,8 +216,13 @@ def test_personal_content_is_private_then_shareable(embeddings):
 
 
 def test_add_note_lands_in_the_callers_personal_domain(index, embeddings):
+    from brain_app.serving.reindex import MemoryReindexer
+
     gate = MemoryGate()
-    svc = BrainService(index, embeddings, load_policy(prof="personal"), note_gate=gate)
+    reindexer = MemoryReindexer()
+    svc = BrainService(
+        index, embeddings, load_policy(prof="personal"), note_gate=gate, reindexer=reindexer
+    )
     owner = _ident("sub-42", email="me@example.com")
     result = svc.add_note(owner, title="Standup notes", content="Shipped the overlay.")
     assert result.status in {"proposed", "saved"}
@@ -226,6 +231,8 @@ def test_add_note_lands_in_the_callers_personal_domain(index, embeddings):
     # It landed in the caller's own personal domain, provenance-stamped.
     assert landed.domain == "personal:sub-42"
     assert "domain: personal:sub-42" in landed.content
+    # And it triggers a rebuild so the note is searchable promptly.
+    assert reindexer.triggers == 1
 
 
 def test_anonymous_caller_cannot_add_a_note(index, embeddings):

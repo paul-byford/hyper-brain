@@ -12,6 +12,7 @@ import pytest
 from brain_app.auth import identity_from_claims
 from brain_app.config import load_policy
 from brain_app.serving import BrainService, DomainNotAuthorized
+from brain_app.serving.reindex import MemoryReindexer
 from brain_app.serving.reviewer import MemoryReviewer
 
 from .conftest import FINSERV, RECRUITMENT
@@ -57,17 +58,23 @@ def test_readonly_caller_sees_an_empty_queue(index, embeddings):
 
 def test_accept_promotes_and_reindexes(index, embeddings):
     reviewer = MemoryReviewer({FRAUD_PROP: b"# body"})
-    svc = _svc(index, embeddings, reviewer=reviewer)
+    reindexer = MemoryReindexer()
+    svc = BrainService(
+        index, embeddings, load_policy(prof="personal"), reviewer=reviewer, reindexer=reindexer
+    )
     result = svc.accept_proposal(ADMIN, FRAUD_PROP)
     assert result["dest"] == f"{FINSERV}/new-fraud-model.md"
     assert FRAUD_PROP not in reviewer.staged  # moved out of the queue
     assert reviewer.live[f"{FINSERV}/new-fraud-model.md"] == b"# body"
-    assert reviewer.reindexed == 1
+    assert reindexer.triggers == 1  # promoted content triggers a rebuild
 
 
 def test_accept_without_write_access_is_refused(index, embeddings):
     reviewer = MemoryReviewer({FRAUD_PROP: b"# body"})
-    svc = _svc(index, embeddings, reviewer=reviewer)
+    reindexer = MemoryReindexer()
+    svc = BrainService(
+        index, embeddings, load_policy(prof="personal"), reviewer=reviewer, reindexer=reindexer
+    )
     with pytest.raises(DomainNotAuthorized):
         svc.accept_proposal(RECRUITER_RO, FRAUD_PROP)
-    assert reviewer.reindexed == 0  # nothing happened
+    assert reindexer.triggers == 0  # nothing happened

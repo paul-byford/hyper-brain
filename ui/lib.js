@@ -29,9 +29,34 @@ export function allowedDomains(policy, principals) {
   return allowed;
 }
 
-// Keyword ranking, scoped to the allowed domains (the isolation boundary).
+// Whether needle appears as a contiguous token run in haystack ("code" != "encode").
+function containsSeq(haystack, needle) {
+  if (needle.length === 0 || needle.length > haystack.length) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    let ok = true;
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) { ok = false; break; }
+    if (ok) return true;
+  }
+  return false;
+}
+
+// A bonus for documents whose title matches the query (mirrors search.title_boost),
+// so a literal match ranks above merely word-overlapping documents.
+export function titleBoost(queryTokens, title) {
+  if (queryTokens.length === 0) return 0;
+  const tt = tokenize(title || "");
+  if (containsSeq(tt, queryTokens)) return 1.0;
+  const tset = new Set(tt);
+  if (queryTokens.every((t) => tset.has(t))) return 0.6;
+  const covered = queryTokens.filter((t) => tset.has(t)).length / queryTokens.length;
+  return 0.4 * covered;
+}
+
+// Keyword ranking, scoped to the allowed domains (the isolation boundary), with the
+// same title boost the server applies so demo and live agree on ordering.
 export function rankChunks(chunks, query, allowed, topK = 8) {
-  const qTerms = new Set(tokenize(query));
+  const qTokens = tokenize(query);
+  const qTerms = new Set(qTokens);
   if (qTerms.size === 0) return [];
   const scored = [];
   for (const c of chunks) {
@@ -41,7 +66,7 @@ export function rankChunks(chunks, query, allowed, topK = 8) {
     let hits = 0;
     for (const t of toks) if (qTerms.has(t)) hits++;
     if (hits === 0) continue;
-    scored.push({ chunk: c, score: hits / Math.sqrt(toks.length) });
+    scored.push({ chunk: c, score: hits / Math.sqrt(toks.length) + titleBoost(qTokens, c.title) });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, topK);

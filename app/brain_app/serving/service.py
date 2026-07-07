@@ -37,6 +37,7 @@ from ..observability import span
 from ..retrieval import BrainIndex, ExtractiveSynthesiser, Synthesiser, answer, search
 from .attachments import AttachmentStore, MemoryAttachmentStore, safe_filename
 from .proposals import MemoryGate, ProposalResult, ReviewGate, build_proposal
+from .reindex import MemoryReindexer, Reindexer
 from .reviewer import MemoryReviewer, Reviewer, proposal_domain
 
 # Uploaded file types we can extract text from (markdown/HTML/Word offline; PDF via
@@ -107,6 +108,7 @@ class BrainService:
         note_gate: ReviewGate | None = None,
         attachment_store: AttachmentStore | None = None,
         reviewer: Reviewer | None = None,
+        reindexer: Reindexer | None = None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
@@ -137,8 +139,11 @@ class BrainService:
         self.note_gate = note_gate or MemoryGate()
         # Where an uploaded original file is kept (so a document can link to it).
         self.attachment_store: AttachmentStore = attachment_store or MemoryAttachmentStore()
-        # Promotes staged proposals to live + reindexes; who may do so is checked here.
+        # Promotes staged proposals to live; who may do so is checked here.
         self.reviewer: Reviewer = reviewer or MemoryReviewer()
+        # Triggers the index rebuild after a live write (note/upload/accept), so new
+        # content becomes searchable promptly instead of at the next scheduled build.
+        self.reindexer: Reindexer = reindexer or MemoryReindexer()
 
     @property
     def index(self) -> BrainIndex:
@@ -389,7 +394,9 @@ class BrainService:
                 author=identity.email or identity.subject,
                 source_url=source_url,
             )
-            return self.note_gate.submit(proposal)
+            result = self.note_gate.submit(proposal)
+            self.reindexer.trigger()  # make the note searchable promptly
+            return result
 
     def ingest_file(
         self,
@@ -450,7 +457,9 @@ class BrainService:
                     author=identity.email or identity.subject,
                     source_url=source_url or uri,
                 )
-                return self.note_gate.submit(proposal)
+                result = self.note_gate.submit(proposal)
+                self.reindexer.trigger()  # searchable promptly, like add_note
+                return result
 
         # A team domain: the reviewed write path enforces the write grant + domain.
         return self.propose_document(
@@ -574,4 +583,5 @@ class BrainService:
             if domain not in writable:
                 raise DomainNotAuthorized(domain)
             dest = self.reviewer.accept(name)
+            self.reindexer.trigger()  # promote + rebuild so it is searchable promptly
             return {"accepted": name, "dest": dest, "domain": domain}
