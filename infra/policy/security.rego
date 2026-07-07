@@ -32,11 +32,12 @@ deny contains msg if {
 	msg := sprintf("IAM member %q would make a resource public; the brain must never be public", [member])
 }
 
-# OAuth is the one deliberate exception. To let remote MCP connectors discover and
-# call the brain, the Authorization Server (brain-auth) and the brain are public
-# (allUsers), with the OAuth bearer as the in-app gate (docs/oauth.md). Any *other*
-# module granting a public invoker is still a violation this catches.
-_oauth_public_modules := {"auth_service", "brain_service"}
+# OAuth is the deliberate exception. To let remote MCP connectors discover and call
+# the brain, the Authorization Server (brain-auth) and the brain are public (allUsers),
+# with the OAuth bearer as the in-app gate (docs/oauth.md). The UI is public too: it
+# serves a landing page and a sign-in gated app whose data calls hit the (auth-gating)
+# brain. Any *other* module granting a public invoker is still a violation this catches.
+_oauth_public_modules := {"auth_service", "brain_service", "ui_service"}
 
 deny contains msg if {
 	some name, body in input.module

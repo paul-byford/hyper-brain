@@ -151,12 +151,14 @@ cmd_up() {
   gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
   docker build -t "$brain_image" -f "$ROOT/app/Dockerfile" "$ROOT/app"
   docker build -t "$agent_image" -f "$ROOT/app/Dockerfile.agent" "$ROOT/app"
-  # The brain service exists after the first apply, so bake its live MCP endpoint
-  # into the SPA data for the Connections connector modal.
+  # The services exist after the first apply, so bake their live URLs into the SPA:
+  # the MCP endpoint (connector modal) and the OAuth issuer + REST base the live app
+  # signs in against and calls.
   local brain_url; brain_url="$(tf_output brain_url)"
   local auth_url; auth_url="$(tf_output auth_url)"
   if [ -n "$brain_url" ]; then
-    "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE" --mcp-url "$brain_url/mcp"
+    "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE" \
+      --mcp-url "$brain_url/mcp" --api-url "$brain_url" --auth-url "$auth_url"
   else
     "$(python_bin)" "$ROOT/scripts/export_ui_data.py" --profile "$PROFILE"
   fi
@@ -166,10 +168,11 @@ cmd_up() {
   local corpus_bucket; corpus_bucket="$(tf_output corpus_bucket)"
   info "Uploading corpus to gs://$corpus_bucket"
   gcloud storage rsync -r "$ROOT/corpus" "gs://$corpus_bucket" --quiet
+  local ui_url; ui_url="$(tf_output ui_url)"
   tf apply -auto-approve -var-file="../config/$PROFILE.tfvars" -var "project_id=$proj" -var "region=$REGION" \
     -var "image_brain=$brain_image" -var "image_indexer=$brain_image" -var "image_ingest=$brain_image" \
     -var "image_agent=$agent_image" -var "image_ui=$ui_image" -var "brain_audience=$brain_url" \
-    -var "auth_audience=$auth_url"
+    -var "auth_audience=$auth_url" -var "ui_origin=$ui_url"
 
   local prefix; prefix="$(tf_output name_prefix)"
   info "Running the index job (in-tenancy Vertex build to gs://$(tf_output index_bucket))"

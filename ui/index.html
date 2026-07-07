@@ -11,7 +11,35 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div class="app">
+<!-- Public landing page. Shown when the app is deployed (live mode) and the visitor
+     is not signed in; hidden in local/demo mode and once authenticated. -->
+<div class="landing" id="landing" hidden>
+  <div class="landing-card">
+    <div class="landing-brand">
+      <div class="glyph">HB</div>
+      <div>
+        <h1>Hyper Brain</h1>
+        <div class="sub">The company's memory, connected and current</div>
+      </div>
+    </div>
+    <p class="landing-lead">
+      A scale-to-zero company brain: your team's knowledge, connected as a graph and
+      answered with citations, scoped so each person only ever sees what they may read.
+    </p>
+    <div class="landing-steps">
+      <div class="lstep"><span class="ln">1</span><div><b>Sign in with Google.</b> Your identity decides what you can see. New here? You land on the shared <b>commons</b> and your own private <b>personal</b> space.</div></div>
+      <div class="lstep"><span class="ln">2</span><div><b>Get granted team domains.</b> An admin grants your email (or group) the domains you need. It takes effect within minutes, no redeploy.</div></div>
+      <div class="lstep"><span class="ln">3</span><div><b>Explore, add, share.</b> Search and answer across your domains, jot private notes, upload files, and share a note or your whole space with a colleague.</div></div>
+    </div>
+    <div class="landing-actions">
+      <button class="gobtn big" id="signin">Sign in with Google</button>
+      <span class="landing-hint" id="landinghint"></span>
+    </div>
+    <p class="landing-foot mono">In-tenancy on Google Cloud · OAuth 2.1 · your corpus and embeddings never leave your project.</p>
+  </div>
+</div>
+
+<div class="app" id="approot">
   <div class="topbar">
     <div class="brand">
       <div class="glyph">HB</div>
@@ -23,10 +51,12 @@
     <nav class="pagetabs" id="pagetabs" aria-label="Page">
       <button data-page="connect" class="on">Connections</button>
       <button data-page="explore">Explore</button>
+      <button data-page="review" id="reviewtab" hidden>Review</button>
       <button data-page="arch">Architecture</button>
     </nav>
     <div class="bar-right">
       <div class="hashchip"><span class="livedot"></span> index <b id="hash">52aaa08ce4ae</b> · <span id="doccount">12</span> docs</div>
+      <div class="userchip" id="userchip" hidden><span class="dot personal-dot"></span><span id="username"></span><button class="ghostbtn tiny" id="signout">Sign out</button></div>
       <button class="themetgl" id="theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
     </div>
   </div>
@@ -83,7 +113,12 @@
         <div class="body">
           <p class="addnote" id="personalintro" style="margin:0 0 9px">Private to you until you share. <b id="personalowner"></b></p>
           <ul class="doclist" id="personallist"></ul>
-          <button class="gobtn" id="addnote">+ Add a note</button>
+          <div class="pactions">
+            <button class="gobtn" id="addnote">+ Add a note</button>
+            <button class="ghostbtn" id="uploadbtn">⇪ Upload a file</button>
+            <input type="file" id="fileinput" accept=".pdf,.docx,.md,.markdown,.txt,.html,.htm" hidden />
+          </div>
+          <div id="uploadstatus"></div>
           <div id="sharedwithyou"></div>
         </div>
       </section>
@@ -172,6 +207,15 @@
   </div>
 
   <!-- ============================ ARCHITECTURE PAGE ============================ -->
+  <div class="page" id="page-review" hidden>
+    <div class="sechead">
+      <span class="eyebrow">Review queue</span>
+      <h3>Proposed documents awaiting your review</h3>
+      <p>Documents proposed into <b>team domains you can write</b>. Accepting one promotes it into the live domain and rebuilds the index; it becomes searchable within a few minutes. You only see proposals in domains you may approve.</p>
+    </div>
+    <div id="reviewlist" class="reviewlist"></div>
+  </div>
+
   <div class="page" id="page-arch" hidden>
     <div class="sechead">
       <span class="eyebrow">Reference architecture</span>

@@ -1,0 +1,161 @@
+"""A thin JSON REST facade over BrainService, for the browser UI.
+
+The deployed Brain Explorer is a public landing page plus a signed-in app. Once a
+visitor completes the OAuth PKCE flow against the in-tenancy AS, the SPA calls these
+endpoints with the bearer token; every one verifies the token into an ``Identity``
+and delegates to ``BrainService``, so the exact same domain isolation, write scope
+and review checks apply as over MCP. This exists only to spare the browser from
+speaking the MCP wire protocol; it adds no authority of its own.
+
+Routes are registered on the same FastMCP Starlette app (``custom_route``); CORS for
+the UI origin is wired in ``server.main`` when ``BRAIN_CORS_ORIGINS`` is set.
+"""
+
+from __future__ import annotations
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+from ..auth import TokenError, TokenVerifier
+from ..models import Answer, SearchResult
+from .service import AccessError, BrainService, DocumentNotFound
+
+
+def _result(result: SearchResult) -> dict:
+    return {
+        "doc_id": result.doc_id,
+        "domain": result.domain,
+        "title": result.title,
+        "heading": result.heading,
+        "text": result.text,
+        "score": result.score,
+        "via": result.via,
+    }
+
+
+def _answer(result: Answer) -> dict:
+    return {
+        "text": result.text,
+        "citations": [_result(c) for c in result.citations],
+        "gaps": list(result.gaps),
+        "used_domains": list(result.used_domains),
+    }
+
+
+def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) -> None:
+    def identity_of(request: Request):
+        header = request.headers.get("authorization", "")
+        if not header.lower().startswith("bearer "):
+            raise PermissionError("missing bearer token")
+        return verifier.verify(header.split(" ", 1)[1].strip())
+
+    def authed(handler):
+        """Verify the token, map service errors to HTTP status codes."""
+
+        async def wrapper(request: Request) -> JSONResponse:
+            try:
+                identity = identity_of(request)
+            except (PermissionError, TokenError):
+                return JSONResponse({"error": "authentication required"}, status_code=401)
+            try:
+                return await handler(request, identity)
+            except DocumentNotFound:
+                return JSONResponse({"error": "not found"}, status_code=404)
+            except AccessError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=403)
+            except (ValueError, KeyError) as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+
+        return wrapper
+
+    def route(path, methods, handler):
+        mcp.custom_route(path, methods=methods)(authed(handler))
+
+    async def me(request, identity):
+        return JSONResponse(service.my_spaces(identity))
+
+    async def domains(request, identity):
+        return JSONResponse({"domains": service.list_domains(identity)})
+
+    async def documents(request, identity):
+        return JSONResponse({"documents": service.visible_documents(identity)})
+
+    async def search(request, identity):
+        data = await request.json()
+        top_k = int(data.get("top_k", 5))
+        results = service.search(identity, str(data.get("query", "")), top_k=top_k)
+        return JSONResponse({"results": [_result(r) for r in results]})
+
+    async def answer(request, identity):
+        data = await request.json()
+        top_k = int(data.get("top_k", 5))
+        result = service.answer(identity, str(data.get("query", "")), top_k=top_k)
+        return JSONResponse(_answer(result))
+
+    async def document(request, identity):
+        doc_id = request.query_params.get("doc_id", "")
+        return JSONResponse(service.get_document(identity, doc_id))
+
+    async def note(request, identity):
+        data = await request.json()
+        result = service.add_note(
+            identity, title=str(data.get("title", "")), content=str(data.get("content", ""))
+        )
+        return JSONResponse({"status": result.status, "detail": result.detail})
+
+    async def upload(request, identity):
+        data = await request.json()
+        result = service.ingest_file(
+            identity,
+            filename=str(data["filename"]),
+            content_base64=str(data["content_base64"]),
+            domain=data.get("domain"),
+            title=data.get("title"),
+        )
+        return JSONResponse({"status": result.status, "path": result.path, "detail": result.detail})
+
+    async def share(request, identity):
+        data = await request.json()
+        return JSONResponse(
+            service.share(
+                identity,
+                principal=str(data["principal"]),
+                domain=data.get("domain"),
+                doc_id=data.get("doc_id"),
+                write=bool(data.get("write", False)),
+            )
+        )
+
+    async def unshare(request, identity):
+        data = await request.json()
+        removed = service.unshare(
+            identity,
+            principal=str(data["principal"]),
+            domain=data.get("domain"),
+            doc_id=data.get("doc_id"),
+        )
+        return JSONResponse({"removed": removed})
+
+    async def shares(request, identity):
+        return JSONResponse(service.list_shares(identity))
+
+    async def proposals(request, identity):
+        return JSONResponse({"proposals": service.list_proposals(identity)})
+
+    async def accept(request, identity):
+        data = await request.json()
+        return JSONResponse(service.accept_proposal(identity, str(data["name"])))
+
+    route("/api/me", ["GET"], me)
+    route("/api/domains", ["GET"], domains)
+    route("/api/documents", ["GET"], documents)
+    route("/api/search", ["POST"], search)
+    route("/api/answer", ["POST"], answer)
+    route("/api/document", ["GET"], document)
+    route("/api/note", ["POST"], note)
+    route("/api/upload", ["POST"], upload)
+    route("/api/share", ["POST"], share)
+    route("/api/unshare", ["POST"], unshare)
+    route("/api/shares", ["GET"], shares)
+    route("/api/proposals", ["GET"], proposals)
+    route("/api/accept", ["POST"], accept)

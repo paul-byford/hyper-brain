@@ -91,6 +91,9 @@
     max-width: 1360px; margin: 0 auto; padding: 18px clamp(14px, 3vw, 30px) 40px;
     display: flex; flex-direction: column; gap: 16px;
   }
+  /* The flex display above would otherwise override the `hidden` attribute the
+     landing gate sets on the app while signed out. */
+  .app[hidden] { display: none; }
 
   /* ---- Top bar ---- */
   .topbar {
@@ -512,3 +515,39 @@
 textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+/* ---- Public landing page (live mode, signed out) ---- */
+.landing { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px; background:
+  radial-gradient(1100px 500px at 50% -10%, color-mix(in srgb, var(--signal) 10%, var(--ground)), var(--ground)); }
+.landing[hidden] { display: none; }
+.landing-card { width: 100%; max-width: 640px; background: var(--panel); border: 1px solid var(--hair);
+  box-shadow: var(--shadow); padding: clamp(22px, 4vw, 40px); }
+.landing-brand { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+.landing-brand .glyph { width: 44px; height: 44px; flex: none; font-size: 15px; font-weight: 800;
+  background: #14130c; border: 1px solid var(--signal); color: var(--signal);
+  display: grid; place-items: center; letter-spacing: -.01em; }
+.landing-brand h1 { margin: 0; font-size: 24px; letter-spacing: -.03em; }
+.landing-brand .sub { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+.landing-lead { color: var(--ink); font-size: 15.5px; line-height: 1.6; margin: 0 0 22px; }
+.landing-steps { display: flex; flex-direction: column; gap: 13px; margin-bottom: 26px; }
+.lstep { display: flex; gap: 12px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.lstep b { color: var(--ink); font-weight: 600; }
+.lstep .ln { flex: none; width: 24px; height: 24px; display: grid; place-items: center; font-family: var(--mono);
+  font-size: 12px; color: var(--signal-ink); border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hair)); }
+.landing-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.gobtn.big { font-size: 15px; padding: 12px 22px; }
+.landing-hint { color: var(--clay, #b46); font-size: 12.5px; }
+.landing-foot { color: var(--faint); font-size: 10.5px; letter-spacing: .04em; margin: 22px 0 0; }
+
+/* ---- Live chrome: signed-in user, review queue ---- */
+.userchip { display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: var(--panel);
+  border: 1px solid var(--hair); padding: 5px 8px 5px 11px; box-shadow: var(--shadow); }
+.userchip .dot { width: 8px; height: 8px; }
+.kind-personal { color: var(--signal-ink); border-color: color-mix(in srgb, var(--signal) 40%, var(--hair)); }
+.pactions { display: flex; gap: 8px; flex-wrap: wrap; }
+.reviewlist { display: flex; flex-direction: column; gap: 10px; }
+.reviewcard { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 1px solid var(--hair); background: var(--panel); box-shadow: var(--shadow); padding: 12px 14px; }
+.reviewcard .rc-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.reviewcard .rc-name { font-size: 12.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.reviewcard .rc-err { color: #b46; font-size: 12px; }

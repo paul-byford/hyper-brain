@@ -90,6 +90,12 @@ variable "brain_audience" {
   default     = ""
 }
 
+variable "ui_origin" {
+  description = "The deployed UI's origin (its Cloud Run URL), allowed to call the brain's REST facade via CORS. Set on the second apply once the URL is known; the entrypoint passes it automatically."
+  type        = string
+  default     = ""
+}
+
 variable "agent_model" {
   description = "Gemini model the live agent and answer synthesis use on Vertex."
   type        = string

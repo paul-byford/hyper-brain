@@ -16,6 +16,12 @@ import {
   rankChunks,
   reconstructDoc,
 } from "./lib.js";
+import { beginLogin, completeLoginIfRedirected, signOut, token } from "./auth.js";
+import { api, fileToBase64 } from "./live.js";
+
+// Live mode is on when the deployed config carries the brain REST base + OAuth issuer.
+// Until a visitor signs in they see the public landing page; after, real per-user data.
+let LIVE = false, API = null, ME = null;
 
 const $ = (sel) => document.querySelector(sel);
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -47,15 +53,46 @@ const domVar = (domain) => `--domain-${((domIdx.get(domain) || 0) % 6) + 1}`;
 //  Boot
 // ============================================================================
 async function boot() {
+  config = await fetch("data/config.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  LIVE = !!(config.api_url && config.auth_url);
+
+  if (LIVE) {
+    API = api(config.api_url);
+    try {
+      await completeLoginIfRedirected(config.auth_url);
+    } catch (e) {
+      $("#landinghint").textContent = String(e.message || e);
+    }
+    if (!token()) { showLanding(); return; }
+    try {
+      await bootLive();
+    } catch (e) {
+      if (e && e.status === 401) { signOut(); showLanding(); return; }
+      $("#approot").innerHTML =
+        `<div class="panel" style="margin:20px;padding:20px"><h2>Could not load</h2>
+         <p style="color:var(--muted)">${esc(String(e.message || e))}</p></div>`;
+    }
+    return;
+  }
+  await bootDemo();
+}
+
+function showLanding() {
+  $("#landing").hidden = false;
+  $("#approot").hidden = true;
+  $("#signin").addEventListener("click", () => beginLogin(config.auth_url));
+}
+
+// Local / offline demo: the static exported index with the "Acting as" simulator.
+async function bootDemo() {
   try {
-    const [idx, pol, cfg] = await Promise.all([
+    const [idx, pol] = await Promise.all([
       fetch("data/index.json").then((r) => r.json()),
       fetch("data/policy.json").then((r) => r.json()),
-      fetch("data/config.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
     ]);
-    index = idx; policy = pol; config = cfg;
+    index = idx; policy = pol;
   } catch (e) {
-    document.querySelector(".app").innerHTML =
+    $("#approot").innerHTML =
       `<div class="panel" style="margin:20px;padding:20px"><h2>No data</h2>
        <p style="color:var(--muted)">Run <code class="cmd">./brain ui</code> (or
        <code class="cmd">python scripts/export_ui_data.py</code>) to export the index, then serve this
@@ -83,6 +120,205 @@ async function boot() {
   renderConnections();
   loop();
   setPage("connect"); // Connections is the default page
+}
+
+// Signed-in live mode: real per-user data from the brain's REST facade.
+async function bootLive() {
+  ME = await API.me();
+  const docs = await API.documents();
+  // Shape the REST payload like the static index so the renderers are reused.
+  const adjacency = {};
+  for (const d of docs) adjacency[d.doc_id] = d.links || [];
+  index = { documents: docs, adjacency, chunks: [], content_hash: "" };
+  policy = { domains: [], grants: [] };
+  byId = new Map(docs.map((d) => [d.doc_id, d]));
+
+  const domains = [...new Set(docs.map((d) => d.domain))].sort();
+  DOMAIN_ORDER = domains;
+  domIdx = new Map(DOMAIN_ORDER.map((d, i) => [d, i]));
+  state.allowed = new Set(domains);
+  state.principal = ME.you.email || ME.you.subject;
+
+  $("#hash").textContent = "live";
+  $("#doccount").textContent = docs.length;
+
+  // Live chrome: show who is signed in, hide the "Acting as" simulator, offer review.
+  $("#userchip").hidden = false;
+  $("#username").textContent = friendly(state.principal);
+  $("#signout").addEventListener("click", () => { signOut(); window.location.reload(); });
+  const idpill = document.querySelector("#page-explore .idpill");
+  if (idpill) idpill.style.display = "none";
+  const canReview = (ME.writable || []).length > 0;
+  $("#reviewtab").hidden = !canReview;
+
+  buildGraph();
+  fillMcp();
+  initPersonal();
+  wireStatic();
+  wireLive();
+
+  resize();
+  if (W > 0) { seed(); graphSized = true; }
+  renderScope(); renderBrowser(); renderLegend(); relightGraph();
+  renderPersonal();
+  renderConnections();
+  loop();
+  setPage("explore"); // Go straight into the tool.
+}
+
+// ---- Live-mode rendering (REST-backed) --------------------------------------
+async function liveResults(q) {
+  const box = $("#results");
+  box.innerHTML = '<p class="empty">searching…</p>';
+  try {
+    const [results, ans] = await Promise.all([API.search(q), API.answer(q)]);
+    if (!results.length) {
+      box.innerHTML = `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Answer</span></div><p>${esc(ans.text)}</p></div>`;
+      return;
+    }
+    const dom = results[0].domain;
+    let html = `<div class="answer"><div class="lbl"><span class="spark"></span><span class="eyebrow">Grounded answer · ${esc(dom)}</span></div>`;
+    html += `<p>${esc(ans.text)}</p>`;
+    html += `<div class="cites">${(ans.citations || []).map((c) => `<span class="cite" data-doc="${c.doc_id}">↳ ${esc(short(c.doc_id))}</span>`).join("")}</div>`;
+    if ((ans.gaps || []).length) html += `<div class="gaps">gaps · not supported by retrieved context: ${ans.gaps.map(esc).join(", ")}</div>`;
+    html += `</div><div class="hits">`;
+    for (const r of results) {
+      const snip = esc(stripWiki(r.text).slice(0, 130));
+      html += `<div class="hit" data-doc="${r.doc_id}"><div class="meta"><span class="dot" style="background:var(${domVar(r.domain)})"></span>${esc(r.domain)} · ${esc(r.heading || "-")}</div>
+        <div class="htitle">${esc(r.title)}</div><div class="snip">${snip}…</div></div>`;
+    }
+    html += `</div>`;
+    box.innerHTML = html;
+    box.querySelectorAll("[data-doc]").forEach((a) => a.addEventListener("click", () => openDocument(a.dataset.doc)));
+  } catch (e) {
+    box.innerHTML = `<p class="empty">${esc(e.message || String(e))}</p>`;
+  }
+}
+
+async function renderDocLive(d) {
+  const el = $("#doc");
+  el.innerHTML = '<p class="placeholder">loading…</p>';
+  try {
+    const doc = await API.document(d.doc_id);
+    const blocks = String(doc.text || "").split("\n\n").map((b) => {
+      if (b.startsWith("## ")) return `<h4>${esc(b.slice(3))}</h4>`;
+      if (b.startsWith("# ")) return `<h3>${esc(b.slice(2))}</h3>`;
+      return `<p>${esc(stripWiki(b))}</p>`;
+    });
+    const tags = (doc.tags && doc.tags.length)
+      ? `<div class="chips" style="margin:2px 0 10px">${doc.tags.map((t) => `<span class="chip tag">#${esc(t)}</span>`).join("")}</div>` : "";
+    let prov = `<div class="provenance"><span class="dot" style="background:var(${domVar(doc.domain)})"></span>${esc(doc.domain)}`;
+    if (doc.source) prov += ` · source: ${esc(doc.source)}`;
+    if (doc.fetched_at) prov += ` · fetched ${esc(doc.fetched_at)}`;
+    prov += "</div>";
+    el.innerHTML = `<article><h3>${esc(doc.title)}</h3>${tags}${blocks.slice(1).join("")}${prov}</article>`;
+  } catch (e) {
+    el.innerHTML = `<p class="placeholder">${esc(e.message || String(e))}</p>`;
+  }
+}
+
+function renderPersonalLive() {
+  const owner = $("#personalowner");
+  const pd = ME.personal && ME.personal.domain;
+  if (owner) owner.textContent = `${friendly(state.principal)} · ${pd || "no personal space"}`;
+  const list = $("#personallist");
+  if (list) {
+    list.innerHTML = "";
+    const notes = index.documents.filter((d) => d.domain === pd);
+    if (!notes.length) list.innerHTML = '<li class="empty" style="padding:6px 2px">No notes yet. Add one or upload a file — only you will see it.</li>';
+    for (const n of notes) {
+      const li = document.createElement("li"); li.className = "pnote";
+      const row = document.createElement("div"); row.className = "pnote-row";
+      const b = document.createElement("button"); b.className = "pnote-title";
+      b.innerHTML = `<span class="dot personal-dot"></span><span class="t">${esc(n.title)}</span>`;
+      b.addEventListener("click", () => openDocument(n.doc_id));
+      row.appendChild(b); li.appendChild(row); list.appendChild(li);
+    }
+  }
+  // Shared-with-you, from the server's view of the caller.
+  const box = $("#sharedwithyou");
+  const swy = (ME.shared_with_you || {});
+  const domains = swy.domains || [], docs = swy.documents || [];
+  if (box) {
+    if (!domains.length && !docs.length) { box.innerHTML = ""; }
+    else {
+      let html = '<div class="sharedhead">Shared with you</div><ul class="doclist">';
+      for (const d of domains) html += `<li class="pnote shared"><div class="pnote-row"><span class="pnote-title"><span class="dot shared-dot"></span><span class="t">${esc(d.domain)}</span></span><span class="kindbadge kind-shared">shared</span></div></li>`;
+      for (const id of docs) html += `<li class="pnote shared"><div class="pnote-row"><button class="pnote-title" data-doc="${esc(id)}"><span class="dot shared-dot"></span><span class="t">${esc(short(id))}</span></button></div></li>`;
+      html += "</ul>";
+      box.innerHTML = html;
+      box.querySelectorAll("[data-doc]").forEach((a) => a.addEventListener("click", () => openDocument(a.dataset.doc)));
+    }
+  }
+}
+
+async function renderReview() {
+  const box = $("#reviewlist"); if (!box) return;
+  box.innerHTML = '<p class="empty">loading…</p>';
+  try {
+    const proposals = await API.proposals();
+    if (!proposals.length) { box.innerHTML = '<p class="empty">Nothing awaiting your review.</p>'; return; }
+    box.innerHTML = "";
+    for (const p of proposals) {
+      const card = document.createElement("div"); card.className = "reviewcard";
+      card.innerHTML = `<div class="rc-main"><span class="kindbadge kind-team">${esc(p.domain)}</span>
+        <span class="rc-name mono">${esc(short(p.dest))}</span></div>`;
+      const btn = document.createElement("button"); btn.className = "gobtn"; btn.textContent = "Accept";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Accepting…";
+        try {
+          await API.accept(p.name);
+          card.innerHTML = `<div class="rc-main"><span class="kindbadge kind-team">${esc(p.domain)}</span> <span class="rc-name mono">accepted · reindexing</span></div>`;
+        } catch (e) {
+          btn.disabled = false; btn.textContent = "Accept";
+          card.querySelector(".rc-main").insertAdjacentHTML("beforeend", `<span class="rc-err">${esc(e.message || String(e))}</span>`);
+        }
+      });
+      card.appendChild(btn); box.appendChild(card);
+    }
+  } catch (e) {
+    box.innerHTML = `<p class="empty">${esc(e.message || String(e))}</p>`;
+  }
+}
+
+// Wire the live-only actions (add note, upload, share space) to the REST facade.
+function wireLive() {
+  $("#addnote").addEventListener("click", () => { $("#notemodal").hidden = false; $("#notetitle").focus(); });
+  $("#notedo").addEventListener("click", async () => {
+    const title = $("#notetitle").value.trim(), content = $("#notebody").value.trim();
+    if (!title && !content) return;
+    $("#notemodal").hidden = true; $("#notetitle").value = ""; $("#notebody").value = "";
+    try { await API.note(title || "Untitled note", content); await reloadLiveDocs("Note saved."); }
+    catch (e) { flashUpload(String(e.message || e)); }
+  });
+  document.querySelectorAll("[data-close-note]").forEach((el) => el.addEventListener("click", () => { $("#notemodal").hidden = true; }));
+
+  $("#uploadbtn").addEventListener("click", () => $("#fileinput").click());
+  $("#fileinput").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    flashUpload(`Uploading ${file.name}…`);
+    try {
+      const b64 = await fileToBase64(file);
+      await API.upload(file.name, b64);
+      $("#fileinput").value = "";
+      await reloadLiveDocs(`Uploaded ${file.name}. Searchable after the next index build.`);
+    } catch (err) { flashUpload(String(err.message || err)); }
+  });
+}
+
+function flashUpload(msg) {
+  const el = $("#uploadstatus"); if (el) el.innerHTML = `<p class="addnote" style="margin:8px 0 0">${esc(msg)}</p>`;
+}
+
+async function reloadLiveDocs(msg) {
+  const docs = await API.documents();
+  const adjacency = {};
+  for (const d of docs) adjacency[d.doc_id] = d.links || [];
+  index = { documents: docs, adjacency, chunks: [], content_hash: "" };
+  byId = new Map(docs.map((d) => [d.doc_id, d]));
+  $("#doccount").textContent = docs.length;
+  renderBrowser(); renderPersonal();
+  if (msg) flashUpload(msg);
 }
 
 // ---- Principal + scope ------------------------------------------------------
@@ -126,6 +362,19 @@ function renderScope() {
   }
 }
 
+// Classify a domain for its badge. Live mode reads the caller's real spaces from
+// /api/me; demo mode derives commons/team from the exported policy.
+function kindOf(dom) {
+  if (LIVE && ME) {
+    if (ME.personal && dom === ME.personal.domain) return "personal";
+    if ((ME.commons || []).some((c) => c.domain === dom)) return "commons";
+    const shared = (ME.shared_with_you && ME.shared_with_you.domains) || [];
+    if (shared.some((s) => s.domain === dom)) return "shared";
+    return "team";
+  }
+  return domainKind(policy, dom);
+}
+
 // ---- Domain browser ---------------------------------------------------------
 function renderBrowser() {
   const el = $("#browser"); el.innerHTML = "";
@@ -137,10 +386,10 @@ function renderBrowser() {
     const lab = document.createElement("div"); lab.className = "glabel";
     const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = `var(${domVar(dom)})`;
     lab.appendChild(dot); lab.appendChild(document.createTextNode(dom));
-    const kind = domainKind(policy, dom);
+    const kind = kindOf(dom);
     const badge = document.createElement("span");
     badge.className = "kindbadge kind-" + kind;
-    badge.textContent = kind === "commons" ? "commons" : "team";
+    badge.textContent = kind;
     lab.appendChild(badge);
     g.appendChild(lab);
     const ul = document.createElement("ul"); ul.className = "doclist";
@@ -201,6 +450,7 @@ function noteById(id) { for (const list of Object.values(PERSONAL)) { const n = 
 function sharesForMe() { return SHARES.filter((s) => s.to === state.principal); }
 
 function renderPersonal() {
+  if (LIVE) { renderPersonalLive(); return; }
   const owner = $("#personalowner");
   if (owner) owner.textContent = `Acting as ${friendly(state.principal)} · ${personalDomainId(state.principal)}`;
   const list = $("#personallist");
@@ -337,7 +587,7 @@ function buildGraph() {
   });
   nodeById = new Map(nodes.map((n) => [n.id, n]));
   // Full link set (all domains); relightGraph fades the ones a caller can't read.
-  const gd = graphData(index.documents, index.adjacency, new Set(policy.domains));
+  const gd = graphData(index.documents, index.adjacency, new Set(DOMAIN_ORDER));
   EDGES = gd.links.map((l) => ({ a: l.source, b: l.target }));
   adj = new Map(nodes.map((n) => [n.id, new Set()]));
   for (const e of EDGES) { adj.get(e.a).add(e.b); adj.get(e.b).add(e.a); }
@@ -465,7 +715,9 @@ function renderInline(domain, text) {
 const stripWiki = (s) => s.replace(/\[\[([^\]]+)\]\]/g, (_m, r) => r.split("|").pop());
 function openDocument(id) {
   const d = byId.get(id);
-  if (!d || !state.allowed.has(d.domain)) { state.openDoc = null; renderDoc(); return; }
+  // In live mode the server already scoped byId to what the caller may see (including
+  // docs shared to them, whose domain is not in state.allowed), so trust byId there.
+  if (!d || (!LIVE && !state.allowed.has(d.domain))) { state.openDoc = null; renderDoc(); return; }
   state.openDoc = id; state.openDocNode = nodeById.get(id);
   renderDoc(); renderBrowser();
   if (state.mode === "explore") setMode("read");
@@ -481,6 +733,7 @@ function renderDoc() {
   close.hidden = false;
   const d = byId.get(state.openDoc);
   head.textContent = "Document · " + d.domain;
+  if (LIVE) { renderDocLive(d); return; }
   const md = reconstructDoc(index.chunks, d.doc_id, d.title);
   const blocks = md.split("\n\n").map((b) => {
     if (b.startsWith("## ")) return `<h4>${esc(b.slice(3))}</h4>`;
@@ -504,6 +757,7 @@ function renderResults() {
   const box = $("#results"); const q = state.query.trim();
   if (!box) return;
   if (!q) { box.innerHTML = ""; return; }
+  if (LIVE) { liveResults(q); return; }
   const hits = rankChunks(index.chunks, q, state.allowed, 8);
   const ans = extractiveAnswer(q, hits);
   if (!hits.length) {
@@ -754,6 +1008,8 @@ function setPage(p) {
   $("#page-explore").hidden = p !== "explore";
   $("#page-connect").hidden = p !== "connect";
   $("#page-arch").hidden = p !== "arch";
+  const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";
+  if (p === "review") renderReview();
   for (const b of $("#pagetabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === p);
   for (const el of document.querySelectorAll(".exp-only")) el.style.display = p === "explore" ? "" : "none";
   if (p === "connect") {

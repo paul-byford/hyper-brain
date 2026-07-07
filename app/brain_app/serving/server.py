@@ -277,6 +277,32 @@ def build_server(
     def list_shares(ctx: Context) -> dict:
         return service.list_shares(identity(ctx))
 
+    @mcp.tool(
+        description=(
+            "List documents proposed into team domains you can write, awaiting your "
+            "review. Empty if you have no write (review) access anywhere."
+        )
+    )
+    def list_proposals(ctx: Context) -> list[dict]:
+        return service.list_proposals(identity(ctx))
+
+    @mcp.tool(
+        description=(
+            "Accept a proposed document into its live domain and reindex. Requires "
+            "write (review) access to that domain."
+        )
+    )
+    def accept_proposal(name: str, ctx: Context) -> dict:
+        try:
+            return service.accept_proposal(identity(ctx), name)
+        except AccessError as exc:
+            raise PermissionError(str(exc)) from exc
+
+    # A thin JSON REST facade over the same service + verifier, for the browser UI.
+    from .restapi import register_rest_routes
+
+    register_rest_routes(mcp, service, verifier)
+
     return mcp
 
 
@@ -294,6 +320,7 @@ def _load_service() -> BrainService:
     from ..retrieval import BrainIndex, get_synthesiser
     from .attachments import get_attachment_store
     from .proposals import GcsCorpusGate, MemoryGate, get_gate
+    from .reviewer import get_reviewer
 
     index_path = os.environ.get("BRAIN_INDEX", ".brain/index.json")
     # BRAIN_POLICY may point at a gs:// object so grants take effect without a
@@ -315,6 +342,7 @@ def _load_service() -> BrainService:
         shares_store=get_shares_store(),
         note_gate=note_gate,
         attachment_store=get_attachment_store(),
+        reviewer=get_reviewer(),
     )
 
 
@@ -333,10 +361,30 @@ def main() -> int:
         auth_issuer=auth_issuer,
         resource=resource if auth_issuer else None,
     )
-    # Streamable HTTP is the transport the ADK agent and MCP clients connect over.
-    server.settings.host = os.environ.get("HOST", "0.0.0.0")  # nosec B104
-    server.settings.port = int(os.environ.get("PORT", "8080"))
-    server.run(transport="streamable-http")
+    host = os.environ.get("HOST", "0.0.0.0")  # nosec B104
+    port = int(os.environ.get("PORT", "8080"))
+
+    # The browser UI is served from a different origin, so the REST facade needs CORS
+    # for it. When BRAIN_CORS_ORIGINS is set we build the app ourselves and wrap it;
+    # otherwise the plain streamable-HTTP server runs as before (agents/MCP clients).
+    origins = [o.strip() for o in os.environ.get("BRAIN_CORS_ORIGINS", "").split(",") if o.strip()]
+    if origins:
+        import uvicorn
+        from starlette.middleware.cors import CORSMiddleware
+
+        app = CORSMiddleware(
+            server.streamable_http_app(),
+            allow_origins=origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            allow_credentials=False,
+        )
+        uvicorn.run(app, host=host, port=port)
+    else:
+        # Streamable HTTP is the transport the ADK agent and MCP clients connect over.
+        server.settings.host = host
+        server.settings.port = port
+        server.run(transport="streamable-http")
     return 0
 
 

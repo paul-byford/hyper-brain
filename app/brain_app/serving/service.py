@@ -37,6 +37,7 @@ from ..observability import span
 from ..retrieval import BrainIndex, ExtractiveSynthesiser, Synthesiser, answer, search
 from .attachments import AttachmentStore, MemoryAttachmentStore, safe_filename
 from .proposals import MemoryGate, ProposalResult, ReviewGate, build_proposal
+from .reviewer import MemoryReviewer, Reviewer, proposal_domain
 
 # Uploaded file types we can extract text from (markdown/HTML/Word offline; PDF via
 # in-tenancy Document AI when configured). Anything else is refused, not silently
@@ -105,6 +106,7 @@ class BrainService:
         shares_store: SharesStore | None = None,
         note_gate: ReviewGate | None = None,
         attachment_store: AttachmentStore | None = None,
+        reviewer: Reviewer | None = None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
@@ -135,6 +137,8 @@ class BrainService:
         self.note_gate = note_gate or MemoryGate()
         # Where an uploaded original file is kept (so a document can link to it).
         self.attachment_store: AttachmentStore = attachment_store or MemoryAttachmentStore()
+        # Promotes staged proposals to live + reindexes; who may do so is checked here.
+        self.reviewer: Reviewer = reviewer or MemoryReviewer()
 
     @property
     def index(self) -> BrainIndex:
@@ -159,6 +163,29 @@ class BrainService:
     def _extra_doc_ids(self, identity: Identity) -> set[str]:
         # Individual documents shared with the caller, admitted on top of their domains.
         return readable_docs(identity, self._shares())
+
+    def visible_documents(self, identity: Identity) -> list[dict]:
+        """Metadata for every document the caller may see (their domains + shared
+        docs). Enough for the live UI to render the domain browser and link graph
+        without exposing anything cross-domain."""
+        domains = self._visible_domains(identity)
+        extra = self._extra_doc_ids(identity)
+        out = []
+        for doc in self.index.documents.values():
+            if doc.domain in domains or doc.doc_id in extra:
+                out.append(
+                    {
+                        "doc_id": doc.doc_id,
+                        "domain": doc.domain,
+                        "title": doc.title,
+                        "links": list(doc.links),
+                        "tags": list(doc.tags),
+                        "source": doc.source,
+                        "source_url": doc.source_url,
+                        "fetched_at": doc.fetched_at,
+                    }
+                )
+        return out
 
     def list_domains(self, identity: Identity) -> list[str]:
         domains = self._visible_domains(identity)
@@ -516,3 +543,35 @@ class BrainService:
             "granted": [_share_view(s) for s in shares if s.granted_by == identity.subject],
             "received": [_share_view(s) for s in shares if s.principal in principals],
         }
+
+    # --- Review queue: promote staged proposals (write access = review access) -----
+
+    def _writable(self, identity: Identity) -> set[str]:
+        return writable_domains(identity, self._policy_source(), self._shares())
+
+    def list_proposals(self, identity: Identity) -> list[dict]:
+        """Staged proposals the caller may review: those in domains they can write.
+
+        A caller with no write access sees an empty queue (and the UI hides the tab).
+        """
+        writable = self._writable(identity)
+        return [
+            {"name": ref.name, "domain": ref.domain, "dest": ref.dest}
+            for ref in self.reviewer.list_proposals()
+            if ref.domain in writable
+        ]
+
+    def accept_proposal(self, identity: Identity, name: str) -> dict:
+        """Promote a staged proposal to live and reindex. The caller must have write
+        access to the proposal's domain; otherwise it is refused (and, for a domain
+        they cannot even see, indistinguishable from a missing proposal)."""
+        domain = proposal_domain(name)
+        writable = self._writable(identity)
+        with span(
+            "brain.accept_proposal",
+            **{"brain.domain": domain, "brain.principal": identity.subject},
+        ):
+            if domain not in writable:
+                raise DomainNotAuthorized(domain)
+            dest = self.reviewer.accept(name)
+            return {"accepted": name, "dest": dest, "domain": domain}

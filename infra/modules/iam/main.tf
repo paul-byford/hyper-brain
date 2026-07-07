@@ -41,12 +41,13 @@ resource "google_storage_bucket_iam_member" "brain_index_read" {
   member = "serviceAccount:${google_service_account.brain.email}"
 }
 
-# Brain may create (not overwrite) objects in the corpus bucket, so the gated
-# propose_document tool can stage a quarantined proposal under proposals/ for review,
-# and add_note can land a personal note into the caller's own personal domain.
-resource "google_storage_bucket_iam_member" "brain_corpus_propose" {
+# Brain reads/writes the corpus bucket: it stages proposals under proposals/, lands
+# personal notes into personal: domains, and (on server-side accept) moves an approved
+# proposal into its live domain and removes the staged copy. objectAdmin covers the
+# move+delete that create-only would not; the index it serves stays a separate bucket.
+resource "google_storage_bucket_iam_member" "brain_corpus_curate" {
   bucket = var.corpus_bucket
-  role   = "roles/storage.objectCreator"
+  role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.brain.email}"
 }
 

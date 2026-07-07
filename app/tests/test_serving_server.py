@@ -50,4 +50,6 @@ def test_server_registers_the_tools(index, embeddings):
         "share",
         "unshare",
         "list_shares",
+        "list_proposals",
+        "accept_proposal",
     }

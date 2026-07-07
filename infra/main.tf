@@ -10,6 +10,10 @@ locals {
   # Export spans to in-tenancy Cloud Trace when observability is on, else no-op.
   otel_exporter = var.enable_observability ? "gcp" : "none"
 
+  # The index Job's fully-qualified resource name, so the brain can run it (via the
+  # Cloud Run Admin API) when it accepts a proposal server-side.
+  indexer_job_id = "projects/${var.project_id}/locations/${var.region}/jobs/${var.name_prefix}-indexer"
+
   # Env every workload shares so the Vertex/genai clients bill and region correctly.
   common_env = {
     GOOGLE_CLOUD_PROJECT  = var.project_id
@@ -155,7 +159,13 @@ module "brain_service" {
     # The dynamic sharing overlay: per-owner files in the dedicated shares bucket.
     BRAIN_SHARES_STORE  = "gcs"
     BRAIN_SHARES_BUCKET = module.storage.shares_bucket
-    BRAIN_OTEL          = local.otel_exporter
+    # Server-side review: the brain promotes an accepted proposal in the corpus bucket
+    # and runs this index Job to rebuild. Enforcement (who may accept) is in-app.
+    BRAIN_INDEXER_JOB = local.indexer_job_id
+    # Let the public browser UI call the brain's REST facade (empty = no CORS, the
+    # agent/MCP path). Set to the UI's origin on the second apply.
+    BRAIN_CORS_ORIGINS = var.ui_origin
+    BRAIN_OTEL         = local.otel_exporter
     # When the OAuth AS is live, accept both Google ID tokens (the agent) and our
     # AS's access tokens (remote connectors); otherwise Google only.
     }, local.oauth_live ? {
@@ -200,11 +210,24 @@ module "ui_service" {
   image           = var.image_ui
   service_account = module.iam.ui_sa_email
   ingress         = local.service_ingress
-  invoker_members = var.invoker_members
+  # On the personal profile the UI is public: it serves a landing page to anyone, and
+  # the app behind it is gated by Google sign-in (its data calls hit the brain, which
+  # enforces auth). Controlled stays perimeter-internal.
+  invoker_members = concat(var.invoker_members, !local.is_controlled ? ["allUsers"] : [])
   labels          = var.labels
   env             = { BRAIN_PROFILE = var.profile }
 
   depends_on = [google_project_service.base]
+}
+
+# The brain runs the index Job when it accepts a proposal server-side, so its service
+# account needs run.invoker on that Job (scoped to the one Job, nothing broader).
+resource "google_cloud_run_v2_job_iam_member" "brain_runs_indexer" {
+  project  = var.project_id
+  location = var.region
+  name     = module.indexer_job.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${module.iam.brain_sa_email}"
 }
 
 # The two Cloud Run Jobs (index build, ingestion), run on demand not on a schedule.
