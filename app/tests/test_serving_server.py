@@ -40,11 +40,13 @@ def test_server_registers_the_tools(index, embeddings):
     tool_names = {t.name for t in asyncio.run(server.list_tools())}
     assert tool_names == {
         "list_domains",
+        "my_spaces",
         "search",
         "answer",
         "get_document",
         "propose_document",
         "add_note",
+        "ingest_file",
         "share",
         "unshare",
         "list_shares",

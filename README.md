@@ -62,11 +62,13 @@ command's preflight **detects** these and tells you exactly what to fix rather t
 pretending it can do them.
 
 ```sh
-./brain up          # preflight, provision, deploy, seed the index, print how to connect
-./brain ingest      # pull configured sources (files, web, git) into the corpus
+./brain up             # preflight, provision, deploy, seed the index, print how to connect
+./brain ingest         # pull configured sources (files, web, git) into the corpus
 ./brain grant alice@example.com --domains finserv-ai-engineering
-./brain connect     # prints the MCP config block for your agent
-./brain down        # clean teardown
+./brain connect        # prints the MCP config block for your agent
+./brain review         # list documents proposed into team domains, awaiting review
+./brain accept <name>  # accept a proposal into its live domain and reindex
+./brain down           # clean teardown
 ```
 
 On Windows, use the PowerShell entrypoint with the same subcommands, for example
@@ -78,6 +80,23 @@ upserts by hash). The local subcommands (`index`, `ingest`, `eval`, `agent`,
 New knowledge is added through adapters (`config/sources.yaml`) or by an agent's
 gated `propose_document` tool, and always lands as reviewable, provenance-stamped
 markdown (see `ARCHITECTURE.md` section 12).
+
+### Reviewing and accepting proposed content
+
+Writes into a **team** domain never go live directly. The `propose_document` MCP
+tool stages a provenance-stamped document under `proposals/` in the corpus bucket,
+quarantined for review. Promoting one is a deliberate step:
+
+```sh
+./brain review            # lists each staged proposal and the live path it would take
+./brain accept proposals/finserv-ai-engineering/feature-flags-a1b2c3d4.md
+```
+
+`accept` moves the proposal into its live domain folder and reruns the index job, so
+it becomes searchable within the index TTL. Both commands are local and drive your
+own `gcloud`, so no redeploy is needed. (Personal-space notes written with `add_note`
+are owned by the caller, so they skip this queue and land live in the author's
+`personal:` domain, appearing after the next index build.)
 
 ## Project status
 

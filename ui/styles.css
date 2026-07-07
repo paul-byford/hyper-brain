@@ -459,3 +459,56 @@
 .a-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .a-legend i { width: 9px; height: 9px; display: inline-block; }
 .a-foot { color: var(--faint); font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; margin: 0; }
+
+/* ---- Personal space + sharing (Explore sidebar) ---- */
+.personalpanel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ghostbtn {
+  font-family: var(--mono); font-size: 11px; color: var(--signal-ink);
+  background: var(--panel-2); border: 1px solid var(--hair); padding: 4px 9px; cursor: pointer;
+}
+.ghostbtn:hover { border-color: var(--signal); }
+.ghostbtn.tiny { font-size: 10px; padding: 2px 7px; }
+.kindbadge {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 1px 6px; margin-left: auto; border: 1px solid var(--hair); color: var(--muted); flex: none;
+}
+.kind-commons { color: var(--signal-ink); border-color: color-mix(in srgb, var(--signal) 40%, var(--hair)); }
+.kind-team { color: var(--muted); }
+.kind-shared { color: var(--domain-3); border-color: color-mix(in srgb, var(--domain-3) 40%, var(--hair)); }
+.personal-dot { background: var(--signal); }
+.shared-dot { background: var(--domain-3); }
+.pnote { list-style: none; border-bottom: 1px solid var(--hair); padding: 6px 0; }
+.pnote:last-child { border-bottom: none; }
+.pnote-row { display: flex; align-items: center; gap: 8px; }
+/* Both buttons sit inside .doclist, which sets width:100%; size them to the row. */
+.pnote-row button { width: auto; }
+.pnote-row .ghostbtn { flex: none; }
+.pnote-title {
+  flex: 1; width: auto; display: flex; align-items: center; gap: 8px; min-width: 0;
+  background: none; border: none; text-align: left; color: var(--ink); font-size: 13px; padding: 2px 0;
+}
+.pnote-title .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pnote-body {
+  display: none; color: var(--muted); font-size: 12px; line-height: 1.5;
+  padding: 6px 0 2px 17px; white-space: pre-wrap;
+}
+.pnote.open .pnote-body { display: block; }
+.pnote.shared .pnote-body { display: block; }
+.sharedhead {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); margin: 14px 0 6px;
+}
+.sharelist { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 5px; }
+.sharelist li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.sharelist .ghostbtn { margin-left: auto; }
+.fieldlabel {
+  display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--faint); margin: 12px 0 5px;
+}
+.selectbox {
+  width: 100%; background: var(--panel-2); border: 1px solid var(--hair); color: var(--ink);
+  padding: 8px 10px; font-family: var(--sans); font-size: 13px;
+}
+textarea.selectbox { resize: vertical; font-family: var(--sans); }
+.check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.modal-actions { display: flex; gap: 8px; margin-top: 16px; }

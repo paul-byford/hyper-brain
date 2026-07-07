@@ -17,6 +17,7 @@ param(
     [string]$ProfileName = "personal",
     [string]$Region = "europe-west2",
     [string]$Domains = "",
+    [switch]$Wait,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
 )
 
@@ -88,6 +89,8 @@ Cloud commands (need gcloud + terraform + Docker, and a billing-enabled project)
   up            Provision + deploy + seed the brain, then print how to connect.
   down          Tear everything down (terraform destroy).
   grant <email> -Domains a,b   Grant a teammate invoker + domain access.
+  review        List documents proposed (via propose_document) awaiting review.
+  accept <name> Accept a proposal into its live domain and reindex.
 
 Local commands (no cloud):
   index         Build the local search index from the corpus.
@@ -277,6 +280,32 @@ function Cmd-Grant {
     Note "  gcloud storage cp config/$ProfileName.policy.yaml gs://$(Tf-Output 'index_bucket')/policy.yaml"
 }
 
+# Review and accept documents proposed through the gated write path. propose_document
+# stages a proposal under proposals/ in the corpus bucket; review lists them, accept
+# promotes one into its live domain folder and reruns the index job.
+function Cmd-Review {
+    Require-Cmd "gcloud" "Install the Google Cloud CLI."
+    $py = Get-Python
+    $corpus = Tf-Output "corpus_bucket"
+    if (-not $corpus) { Die "no deployed corpus bucket found; run .\brain.ps1 up first" }
+    & $py -m brain_app.serving.review list --bucket $corpus
+}
+
+function Cmd-Accept {
+    Require-Cmd "gcloud" "Install the Google Cloud CLI."
+    $name = if ($Rest.Count -ge 1) { $Rest[0] } else { "" }
+    if (-not $name) { Die "usage: .\brain.ps1 accept <proposal-name>  (see .\brain.ps1 review)" }
+    $py = Get-Python
+    $proj = Resolve-Project
+    $corpus = Tf-Output "corpus_bucket"
+    if (-not $corpus) { Die "no deployed corpus bucket found; run .\brain.ps1 up first" }
+    $prefix = Tf-Output "name_prefix"
+    if (-not $prefix) { $prefix = "brain" }
+    $waitArg = @(); if ($Wait) { $waitArg = @("--wait") }
+    & $py -m brain_app.serving.review accept --bucket $corpus --name $name `
+        --indexer-job "$prefix-indexer" --project $proj --region $Region @waitArg
+}
+
 # --- Dispatch ------------------------------------------------------------------
 
 try {
@@ -296,6 +325,8 @@ try {
         "up" { Cmd-Up }
         "down" { Cmd-Down }
         "grant" { Cmd-Grant }
+        "review" { Cmd-Review }
+        "accept" { Cmd-Accept }
         default { Die "unknown command '$Command'. Run: .\brain.ps1 help" }
     }
 }

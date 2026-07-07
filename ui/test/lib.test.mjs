@@ -19,35 +19,39 @@ const policy = JSON.parse(readFileSync(here("../data/policy.json")));
 
 const FINSERV = "finserv-ai-engineering";
 const RECRUIT = "enterprise-ai-recruitment";
+const COMMONS = "commons";
 const FIN = ["group:finserv-eng@example.com"];
 const REC = ["group:recruiting@example.com"];
 const ADMIN = ["group:brain-admins@example.com"];
 
 // --- identity / isolation ---
-assert.deepStrictEqual([...allowedDomains(policy, FIN)], [FINSERV]);
-assert.deepStrictEqual([...allowedDomains(policy, REC)], [RECRUIT]);
-assert.strictEqual(allowedDomains(policy, ADMIN).size, 2);
-assert.strictEqual(principalsFromPolicy(policy).length, 3);
+// Every caller also sees the commons domain (wildcard grant), never the other team's.
+const finDomains = allowedDomains(policy, FIN);
+assert.ok(finDomains.has(FINSERV) && finDomains.has(COMMONS) && !finDomains.has(RECRUIT));
+const recDomains = allowedDomains(policy, REC);
+assert.ok(recDomains.has(RECRUIT) && recDomains.has(COMMONS) && !recDomains.has(FINSERV));
+assert.strictEqual(allowedDomains(policy, ADMIN).size, 3); // commons + both teams
+assert.strictEqual(principalsFromPolicy(policy).length, 3); // the wildcard is not a principal
 
 // --- search is scoped: never crosses the domain boundary ---
 const finAllowed = allowedDomains(policy, FIN);
 const inDomain = rankChunks(index.chunks, "real-time fraud detection streaming", finAllowed, 8);
 assert.ok(inDomain.length > 0, "expected in-domain hits");
-assert.ok(inDomain.every((h) => h.chunk.domain === FINSERV), "search returned an in-domain result set");
+assert.ok(inDomain.every((h) => h.chunk.domain !== RECRUIT), "search must never surface the other team");
 
 const crossQuery = rankChunks(index.chunks, "candidate sourcing interview copilots recruiting", finAllowed, 8);
-assert.ok(crossQuery.every((h) => h.chunk.domain === FINSERV), "finserv caller must never see recruitment");
+assert.ok(crossQuery.every((h) => h.chunk.domain !== RECRUIT), "finserv caller must never see recruitment");
 
 // --- graph is filtered to the caller's sub-graph ---
 const gFin = graphData(index.documents, index.adjacency, finAllowed);
 assert.ok(gFin.nodes.length > 0 && gFin.links.length > 0, "expected a finserv sub-graph");
-assert.ok(gFin.nodes.every((n) => n.domain === FINSERV), "graph leaked across domain");
+assert.ok(gFin.nodes.every((n) => n.domain !== RECRUIT), "graph leaked across domain");
 
 const gRec = graphData(index.documents, index.adjacency, allowedDomains(policy, REC));
-assert.ok(gRec.nodes.every((n) => n.domain === RECRUIT), "recruiter graph leaked across domain");
+assert.ok(gRec.nodes.every((n) => n.domain !== FINSERV), "recruiter graph leaked across domain");
 
 const gAdmin = graphData(index.documents, index.adjacency, allowedDomains(policy, ADMIN));
-assert.strictEqual(new Set(gAdmin.nodes.map((n) => n.domain)).size, 2, "admin sees both domains");
+assert.strictEqual(new Set(gAdmin.nodes.map((n) => n.domain)).size, 3, "admin sees every domain");
 
 // --- answer + honest gaps ---
 const ans = extractiveAnswer("real-time fraud detection", inDomain);

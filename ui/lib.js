@@ -112,9 +112,22 @@ export function graphData(documents, adjacency, allowed) {
   return { nodes, links };
 }
 
-// Distinct principals a demo user can act as, derived from the policy grants.
+// Distinct principals a demo user can act as, derived from the policy grants. The
+// wildcard is the commons grant, not a person, so it is never a selectable identity.
 export function principalsFromPolicy(policy) {
   const seen = [];
-  for (const g of policy.grants) if (!seen.includes(g.principal)) seen.push(g.principal);
+  for (const g of policy.grants) {
+    if (g.principal !== WILDCARD && !seen.includes(g.principal)) seen.push(g.principal);
+  }
   return seen;
+}
+
+// Classify a declared domain for display: "commons" if any wildcard grant reaches
+// it (shared with everyone), otherwise "team". Personal and shared domains are not
+// declared in the policy; the UI tags those from the caller's own context.
+export function domainKind(policy, domain) {
+  for (const g of policy.grants) {
+    if (g.principal === WILDCARD && g.domains.includes(domain)) return "commons";
+  }
+  return "team";
 }

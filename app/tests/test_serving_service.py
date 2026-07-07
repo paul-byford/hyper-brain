@@ -47,10 +47,11 @@ def _service(index, embeddings, policy, gate=None):
 
 def test_list_domains_is_scoped(index, embeddings, policy):
     svc = _service(index, embeddings, policy)
-    # Everyone also sees the commons domain (granted via the wildcard).
-    assert svc.list_domains(_identity(FINSERV_ENG)) == sorted([COMMONS, FINSERV])
-    assert svc.list_domains(_identity(RECRUITER)) == sorted([COMMONS, RECRUITMENT])
-    assert svc.list_domains(_identity(ADMIN)) == sorted([COMMONS, FINSERV, RECRUITMENT])
+    # Everyone also sees the commons domain (wildcard) and their own personal space.
+    personal = "personal:user@bank.com"  # _identity mints sub == email
+    assert svc.list_domains(_identity(FINSERV_ENG)) == sorted([COMMONS, FINSERV, personal])
+    assert svc.list_domains(_identity(RECRUITER)) == sorted([COMMONS, RECRUITMENT, personal])
+    assert svc.list_domains(_identity(ADMIN)) == sorted([COMMONS, FINSERV, RECRUITMENT, personal])
 
 
 def test_search_never_crosses_domain(index, embeddings, policy):

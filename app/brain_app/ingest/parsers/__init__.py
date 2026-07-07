@@ -20,6 +20,7 @@ __all__ = ["Parser", "HtmlParser", "MarkdownParser", "get_parser"]
 _MARKDOWN = ("text/markdown", "text/x-markdown", "text/plain")
 _HTML = ("text/html", "application/xhtml+xml")
 _PDF = ("application/pdf",)
+_DOCX = ("application/vnd.openxmlformats-officedocument.wordprocessingml.document",)
 
 
 def get_parser(mime: str) -> Parser:
@@ -29,6 +30,11 @@ def get_parser(mime: str) -> Parser:
         return MarkdownParser()
     if base in _HTML:
         return HtmlParser()
+    if base in _DOCX:
+        # Word extraction is stdlib-only, so it resolves offline like markdown/HTML.
+        from .docx import DocxParser
+
+        return DocxParser()
     if base in _PDF:
         # Lazy: the real parsers need the cloud, so they are not imported offline.
         # Use in-tenancy Document AI when a processor is configured, else the stub.

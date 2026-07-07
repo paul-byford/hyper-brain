@@ -75,6 +75,19 @@
         <div class="body" id="browser"></div>
       </section>
 
+      <section class="panel personalpanel">
+        <header>
+          <h2>Your personal space</h2>
+          <button class="ghostbtn" id="sharespace" title="Share your whole personal space with someone">Share space</button>
+        </header>
+        <div class="body">
+          <p class="addnote" id="personalintro" style="margin:0 0 9px">Private to you until you share. <b id="personalowner"></b></p>
+          <ul class="doclist" id="personallist"></ul>
+          <button class="gobtn" id="addnote">+ Add a note</button>
+          <div id="sharedwithyou"></div>
+        </div>
+      </section>
+
       <section class="panel adddata">
         <header><h2>Add data</h2></header>
         <div class="body">
@@ -287,6 +300,44 @@
   </div>
 
   <!-- MCP connector modal (opened from the Embedded / API card) -->
+  <!-- Share modal: pick who to share a document or the whole personal space with -->
+  <div class="modal" id="sharemodal" hidden>
+    <div class="modal-backdrop" data-close-share></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Share">
+      <header><h2 id="sharetitle">Share</h2><button class="docclose" data-close-share aria-label="Close">✕ close</button></header>
+      <div class="body">
+        <p class="modal-lead" id="sharelead">Choose who may read this. They see it alongside their own domains; revoke any time.</p>
+        <label class="fieldlabel" for="sharewith">Share with</label>
+        <select id="sharewith" class="selectbox"></select>
+        <label class="check"><input type="checkbox" id="sharewrite" /> Also let them add to it (write)</label>
+        <div class="modal-actions">
+          <button class="gobtn" id="sharedo">Share</button>
+          <button class="ghostbtn" data-close-share>Cancel</button>
+        </div>
+        <div id="sharelistwrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add-note modal: write into your personal space -->
+  <div class="modal" id="notemodal" hidden>
+    <div class="modal-backdrop" data-close-note></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Add a note">
+      <header><h2>Add a personal note</h2><button class="docclose" data-close-note aria-label="Close">✕ close</button></header>
+      <div class="body">
+        <p class="modal-lead">Private to you. In the live app this calls <span class="mono">add_note</span>; here it is a local demo.</p>
+        <label class="fieldlabel" for="notetitle">Title</label>
+        <input id="notetitle" class="selectbox" type="text" placeholder="e.g. Weekly priorities" />
+        <label class="fieldlabel" for="notebody">Note</label>
+        <textarea id="notebody" class="selectbox" rows="5" placeholder="Jot anything down…"></textarea>
+        <div class="modal-actions">
+          <button class="gobtn" id="notedo">Save note</button>
+          <button class="ghostbtn" data-close-note>Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="mcpmodal" hidden>
     <div class="modal-backdrop" data-close></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-label="MCP connector">

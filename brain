@@ -65,6 +65,8 @@ Cloud commands (need gcloud + terraform + Docker, and a billing-enabled project)
   up            Provision + deploy + seed the brain, then print how to connect.
   down          Tear everything down (terraform destroy).
   grant <email> --domains a,b   Grant a teammate invoker + domain access.
+  review        List documents proposed (via propose_document) awaiting review.
+  accept <name> Accept a proposal into its live domain and reindex.
 
 Local commands (no cloud):
   index         Build the local search index from the corpus.
@@ -208,6 +210,29 @@ cmd_grant() {
   note "  gcloud storage cp config/$PROFILE.policy.yaml gs://$(tf_output index_bucket)/policy.yaml"
 }
 
+# Review and accept documents proposed through the gated write path. propose_document
+# stages a proposal under proposals/ in the corpus bucket; review lists them, accept
+# promotes one into its live domain folder and reruns the index job.
+cmd_review() {
+  require gcloud "Install the Google Cloud CLI."
+  local corpus; corpus="$(tf_output corpus_bucket)"
+  [ -n "$corpus" ] || die "no deployed corpus bucket found; run ./brain up first"
+  "$(python_bin)" -m brain_app.serving.review list --bucket "$corpus"
+}
+
+cmd_accept() {
+  require gcloud "Install the Google Cloud CLI."
+  local name="$1"
+  [ -n "$name" ] || die "usage: ./brain accept <proposal-name>  (see ./brain review)"
+  local proj; proj="$(resolve_project)"
+  local corpus; corpus="$(tf_output corpus_bucket)"
+  [ -n "$corpus" ] || die "no deployed corpus bucket found; run ./brain up first"
+  local prefix; prefix="$(tf_output name_prefix)"; [ -n "$prefix" ] || prefix="brain"
+  local wait_arg=(); [ -n "$WAIT" ] && wait_arg=(--wait)
+  "$(python_bin)" -m brain_app.serving.review accept --bucket "$corpus" --name "$name" \
+    --indexer-job "$prefix-indexer" --project "$proj" --region "$REGION" "${wait_arg[@]}"
+}
+
 # --- Parse args: <command> then flags -----------------------------------------
 COMMAND="${1:-help}"; shift || true
 POSITIONAL=()
@@ -217,6 +242,7 @@ while [ $# -gt 0 ]; do
     --profile) PROFILE="$2"; shift 2;;
     --region) REGION="$2"; shift 2;;
     --domains) DOMAINS="$2"; shift 2;;
+    --wait) WAIT=1; shift;;
     *) POSITIONAL+=("$1"); shift;;
   esac
 done
@@ -236,5 +262,7 @@ case "$COMMAND" in
   up) cmd_up;;
   down) cmd_down;;
   grant) cmd_grant "${1:-}";;
+  review) cmd_review;;
+  accept) cmd_accept "${1:-}";;
   *) die "unknown command '$COMMAND'. Run: ./brain help";;
 esac

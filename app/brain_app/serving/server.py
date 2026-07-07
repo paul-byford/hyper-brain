@@ -123,9 +123,24 @@ def build_server(
             # Do not echo token internals back to the caller.
             raise PermissionError("token rejected") from exc
 
-    @mcp.tool(description="List the knowledge domains the caller may retrieve from.")
+    @mcp.tool(
+        description=(
+            "List the knowledge domains the caller may retrieve from, including their "
+            "own personal space (even when empty)."
+        )
+    )
     def list_domains(ctx: Context) -> list[str]:
         return service.list_domains(identity(ctx))
+
+    @mcp.tool(
+        description=(
+            "Describe the caller's spaces and how to use them: their private personal "
+            "space (write to it with add_note), the shared commons, their team domains, "
+            "and anything shared with them. Call this to discover where to put content."
+        )
+    )
+    def my_spaces(ctx: Context) -> dict:
+        return service.my_spaces(identity(ctx))
 
     @mcp.tool(description="Search the brain; results are scoped to the caller's domains.")
     def search(query: str, ctx: Context, top_k: int = 5) -> list[dict]:
@@ -144,8 +159,9 @@ def build_server(
 
     @mcp.tool(
         description=(
-            "Propose a new document (write scope required). Lands as a reviewable "
-            "change, never a live write. The target domain must be one you may write."
+            "Propose a new document into a shared TEAM domain. Goes to review, never a "
+            "live write, and the target domain must be one you may write. For content "
+            "private to you, use add_note instead (your personal space, no review)."
         )
     )
     def propose_document(
@@ -183,6 +199,38 @@ def build_server(
         try:
             result = service.add_note(
                 identity(ctx), title=title, content=content, source_url=source_url
+            )
+        except AccessError as exc:
+            raise PermissionError(str(exc)) from exc
+        return {
+            "status": result.status,
+            "path": result.path,
+            "checksum": result.checksum,
+            "detail": result.detail,
+        }
+
+    @mcp.tool(
+        description=(
+            "Ingest an uploaded file (PDF, Word .docx, markdown, HTML, text) as a "
+            "document. content_base64 is the file's bytes, base64-encoded. Defaults to "
+            "your personal space; pass a team domain to propose it there for review. "
+            "The file is parsed to searchable text and the original is kept as a link."
+        )
+    )
+    def ingest_file(
+        filename: str,
+        content_base64: str,
+        ctx: Context,
+        domain: str | None = None,
+        title: str | None = None,
+    ) -> dict:
+        try:
+            result = service.ingest_file(
+                identity(ctx),
+                filename=filename,
+                content_base64=content_base64,
+                domain=domain,
+                title=title,
             )
         except AccessError as exc:
             raise PermissionError(str(exc)) from exc
@@ -244,6 +292,7 @@ def _load_service() -> BrainService:
     from ..config import policy_source
     from ..embeddings import get_embeddings
     from ..retrieval import BrainIndex, get_synthesiser
+    from .attachments import get_attachment_store
     from .proposals import GcsCorpusGate, MemoryGate, get_gate
 
     index_path = os.environ.get("BRAIN_INDEX", ".brain/index.json")
@@ -265,6 +314,7 @@ def _load_service() -> BrainService:
         index_loader=lambda: BrainIndex.load(index_path),
         shares_store=get_shares_store(),
         note_gate=note_gate,
+        attachment_store=get_attachment_store(),
     )
 
 

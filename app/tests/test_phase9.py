@@ -179,9 +179,10 @@ def test_service_resolves_policy_per_request(index, embeddings):
     svc = BrainService(index, embeddings, finserv_only, policy_source=lambda: current[0])
     ident = identity_from_claims({"sub": "u", "groups": ["x@e.com"]})
 
-    assert svc.list_domains(ident) == [FINSERV]
+    # list_domains also advertises the caller's own personal space (sub "u").
+    assert svc.list_domains(ident) == sorted([FINSERV, "personal:u"])
     current[0] = both  # a grant just widened access
-    assert svc.list_domains(ident) == sorted([FINSERV, RECRUITMENT])
+    assert svc.list_domains(ident) == sorted([FINSERV, RECRUITMENT, "personal:u"])
 
 
 # --- Document AI parser -------------------------------------------------------

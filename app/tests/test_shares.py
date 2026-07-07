@@ -232,3 +232,30 @@ def test_anonymous_caller_cannot_add_a_note(index, embeddings):
     svc = BrainService(index, embeddings, load_policy(prof="personal"))
     with pytest.raises(AccessError):
         svc.add_note(identity_from_claims({}), title="x", content="y")
+
+
+# --- Discoverability: list_domains + my_spaces -----------------------------------
+
+
+def test_list_domains_advertises_empty_personal_space(svc):
+    # A caller with no personal content still sees their personal domain listed, so
+    # a client can discover it exists and that add_note writes there.
+    newcomer = _ident("sub-77", email="newbie@example.com")
+    domains = svc.list_domains(newcomer)
+    assert "personal:sub-77" in domains
+    assert COMMONS in domains
+
+
+def test_my_spaces_classifies_the_callers_domains(svc):
+    spaces = svc.my_spaces(RECRUITER)
+    assert spaces["personal"]["domain"] == f"personal:{RECRUITER.subject}"
+    assert [c["domain"] for c in spaces["commons"]] == [COMMONS]
+    assert [t["domain"] for t in spaces["teams"]] == [RECRUITMENT]
+    # And it tells the client which tool writes private content.
+    assert "add_note" in spaces["how_to"]["private_note"]
+
+
+def test_my_spaces_reflects_a_share(svc):
+    svc.share(ADMIN, principal=RECRUIT_GROUP, doc_id=FRAUD_DOC)
+    spaces = svc.my_spaces(RECRUITER)
+    assert FRAUD_DOC in spaces["shared_with_you"]["documents"]

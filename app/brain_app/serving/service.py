@@ -9,6 +9,8 @@ dependency, so the whole security contract is testable offline.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import time
 from collections.abc import Callable
@@ -19,19 +21,41 @@ from ..auth import (
     Share,
     SharesStore,
     can_share,
+    is_personal_domain,
     personal_domain,
+    personal_owner,
     read_domains,
     readable_docs,
     utc_now,
     validate_share,
     writable_domains,
 )
-from ..config import Policy
+from ..config import WILDCARD, Policy
 from ..embeddings.base import EmbeddingProvider
 from ..models import Answer, SearchResult
 from ..observability import span
 from ..retrieval import BrainIndex, ExtractiveSynthesiser, Synthesiser, answer, search
+from .attachments import AttachmentStore, MemoryAttachmentStore, safe_filename
 from .proposals import MemoryGate, ProposalResult, ReviewGate, build_proposal
+
+# Uploaded file types we can extract text from (markdown/HTML/Word offline; PDF via
+# in-tenancy Document AI when configured). Anything else is refused, not silently
+# dropped, so a caller knows their file was not ingested.
+_EXT_MIME = {
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def _title_from_filename(filename: str) -> str:
+    stem = os.path.splitext(safe_filename(filename))[0]
+    words = [w for w in stem.replace("_", " ").replace("-", " ").split() if w]
+    return " ".join(w.capitalize() for w in words) or "Attachment"
 
 
 def _share_view(share: Share) -> dict:
@@ -80,6 +104,7 @@ class BrainService:
         index_ttl: float | None = None,
         shares_store: SharesStore | None = None,
         note_gate: ReviewGate | None = None,
+        attachment_store: AttachmentStore | None = None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
@@ -108,6 +133,8 @@ class BrainService:
         # core and tests are self-contained; the deployed brain wires GCS-backed ones.
         self.shares_store: SharesStore = shares_store or MemorySharesStore()
         self.note_gate = note_gate or MemoryGate()
+        # Where an uploaded original file is kept (so a document can link to it).
+        self.attachment_store: AttachmentStore = attachment_store or MemoryAttachmentStore()
 
     @property
     def index(self) -> BrainIndex:
@@ -134,7 +161,68 @@ class BrainService:
         return readable_docs(identity, self._shares())
 
     def list_domains(self, identity: Identity) -> list[str]:
-        return sorted(self._visible_domains(identity))
+        domains = self._visible_domains(identity)
+        # Always advertise the caller's own personal space, even before it has any
+        # content, so a client can discover it exists (and that add_note writes here).
+        personal = personal_domain(identity)
+        if personal:
+            domains = domains | {personal}
+        return sorted(domains)
+
+    def _domain_kind(self, domain: str, identity: Identity, policy: Policy) -> str:
+        """Classify a domain for the caller: personal, commons, team, or shared."""
+        if is_personal_domain(domain):
+            return "personal" if personal_owner(domain) == identity.subject else "shared"
+        principals = set(identity.principals)
+        for grant in policy.grants:
+            if grant.principal == WILDCARD and domain in grant.domains:
+                return "commons"
+        if domain in policy.domains_for(principals):
+            return "team"
+        return "shared"
+
+    def my_spaces(self, identity: Identity) -> dict:
+        """A self-describing map of the caller's spaces and how to use them.
+
+        The discovery affordance an MCP client needs: it names the caller's private
+        personal domain (where add_note writes), the shared commons, the team domains
+        they were granted, and anything shared with them, plus which tool does what.
+        """
+        policy = self._policy_source()
+        doc_counts: dict[str, int] = {}
+        for doc in self.index.documents.values():
+            doc_counts[doc.domain] = doc_counts.get(doc.domain, 0) + 1
+
+        personal = personal_domain(identity)
+        buckets: dict[str, list] = {"commons": [], "team": [], "shared": []}
+        for domain in sorted(self._visible_domains(identity)):
+            if is_personal_domain(domain):
+                continue
+            kind = self._domain_kind(domain, identity, policy)
+            buckets.setdefault(kind, []).append(
+                {"domain": domain, "documents": doc_counts.get(domain, 0)}
+            )
+
+        shared_docs = sorted(self._extra_doc_ids(identity))
+        return {
+            "you": {"subject": identity.subject, "email": identity.email},
+            "personal": {
+                "domain": personal,
+                "documents": doc_counts.get(personal, 0) if personal else 0,
+                "how_to": "Private to you. Use add_note to save notes here; nobody else "
+                "can see them until you share. Use share to share this space or a "
+                "single document, unshare to revoke.",
+            },
+            "commons": buckets["commons"],
+            "teams": buckets["team"],
+            "shared_with_you": {"domains": buckets["shared"], "documents": shared_docs},
+            "writable": sorted(writable_domains(identity, policy, self._shares())),
+            "how_to": {
+                "private_note": "add_note(title, content) -> your personal space",
+                "team_document": "propose_document(domain, title, content) -> reviewed",
+                "share": "share(principal, domain= or doc_id=) / unshare / list_shares",
+            },
+        }
 
     def search(self, identity: Identity, query: str, *, top_k: int = 5) -> list[SearchResult]:
         domains = self._visible_domains(identity)
@@ -275,6 +363,76 @@ class BrainService:
                 source_url=source_url,
             )
             return self.note_gate.submit(proposal)
+
+    def ingest_file(
+        self,
+        identity: Identity,
+        *,
+        filename: str,
+        content_base64: str,
+        domain: str | None = None,
+        title: str | None = None,
+        source_url: str | None = None,
+    ) -> ProposalResult:
+        """Ingest an uploaded file (PDF, Word, markdown, HTML, text) as a document.
+
+        The file is parsed to markdown and indexed as text; the original is stored as
+        a linked attachment. Defaults to the caller's personal space (ungated); a team
+        domain goes through the reviewed propose path. Retrieval is text-only, so the
+        extracted text is what becomes searchable, with the original kept downloadable.
+        """
+        try:
+            raw = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise AccessError("content must be base64-encoded file bytes") from exc
+
+        ext = os.path.splitext(filename.lower())[1]
+        mime = _EXT_MIME.get(ext)
+        if not mime:
+            raise AccessError(
+                f"unsupported file type {ext or filename!r}; supported: .md .txt .html .pdf .docx"
+            )
+
+        personal = personal_domain(identity)
+        target = domain or personal
+        if not target:
+            raise AccessError("no target domain, and an anonymous caller has no personal space")
+
+        with span(
+            "brain.ingest_file",
+            **{"brain.domain": target, "brain.principal": identity.subject},
+        ):
+            from ..ingest.parsers import get_parser
+
+            body = get_parser(mime).parse(raw, mime).body.strip()
+            if not body:
+                raise AccessError("no text could be extracted from the file")
+            resolved_title = (title or _title_from_filename(filename)).strip() or filename
+
+            uri = self.attachment_store.put(target, filename, raw)
+            content = f"{body}\n\n> Ingested from [{safe_filename(filename)}]({uri})\n"
+
+            if is_personal_domain(target):
+                # Your own personal space: ungated, like add_note.
+                if personal_owner(target) != identity.subject:
+                    raise DomainNotAuthorized(target)
+                proposal = build_proposal(
+                    domain=target,
+                    title=resolved_title,
+                    content=content,
+                    author=identity.email or identity.subject,
+                    source_url=source_url or uri,
+                )
+                return self.note_gate.submit(proposal)
+
+        # A team domain: the reviewed write path enforces the write grant + domain.
+        return self.propose_document(
+            identity,
+            domain=target,
+            title=resolved_title,
+            content=content,
+            source_url=source_url or uri,
+        )
 
     def _resolve_share_target(
         self, identity: Identity, domain: str | None, doc_id: str | None

@@ -9,6 +9,7 @@
 // comes from lib.js, so it mirrors the server's behaviour.
 import {
   allowedDomains,
+  domainKind,
   extractiveAnswer,
   graphData,
   principalsFromPolicy,
@@ -73,6 +74,7 @@ async function boot() {
   buildGraph();
   fillMcp();
   initPrincipals();
+  initPersonal();
   wireStatic();
 
   resize();
@@ -106,6 +108,7 @@ function onScopeChange() {
     state.openDoc = null; renderDoc();
   }
   renderScope(); renderBrowser(); renderLegend(); relightGraph(); renderResults();
+  renderPersonal();
 }
 function renderScope() {
   const vis = index.documents.filter((d) => state.allowed.has(d.domain)).length;
@@ -133,7 +136,13 @@ function renderBrowser() {
     const g = document.createElement("div"); g.className = "domgroup";
     const lab = document.createElement("div"); lab.className = "glabel";
     const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = `var(${domVar(dom)})`;
-    lab.appendChild(dot); lab.appendChild(document.createTextNode(dom)); g.appendChild(lab);
+    lab.appendChild(dot); lab.appendChild(document.createTextNode(dom));
+    const kind = domainKind(policy, dom);
+    const badge = document.createElement("span");
+    badge.className = "kindbadge kind-" + kind;
+    badge.textContent = kind === "commons" ? "commons" : "team";
+    lab.appendChild(badge);
+    g.appendChild(lab);
     const ul = document.createElement("ul"); ul.className = "doclist";
     const docs = index.documents.filter((d) => d.domain === dom).sort((a, b) => a.title.localeCompare(b.title));
     for (const d of docs) {
@@ -159,6 +168,156 @@ function renderLegend() {
     const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = `var(${domVar(dom)})`;
     c.appendChild(dot); c.appendChild(document.createTextNode(dom)); el.appendChild(c);
   }
+}
+
+// ============================================================================
+//  Personal space + sharing (client-side demo of add_note / share / unshare).
+//  Kept separate from the index/graph so it never affects isolation rendering:
+//  it demonstrates the model the deployed brain enforces server-side.
+// ============================================================================
+const PERSONAL = {};        // principal -> [{ id, title, body }]
+let SHARES = [];            // { by, to, scope: "space"|"doc", docId, docTitle, write }
+let shareCtx = null;        // the pending share target while the modal is open
+
+const personalDomainId = (p) => `personal:${p}`;
+
+function seedPersonal() {
+  // A couple of private notes per identity, so the space is never empty in the demo.
+  const seeds = {
+    default: [
+      { title: "My priorities this week", body: "Ship the sharing overlay. Draft the model-risk memo. Prep Friday review." },
+      { title: "Scratch: ideas to file later", body: "A private jot only I can see, until I choose to share it." },
+    ],
+  };
+  for (const p of PRINCIPALS) {
+    PERSONAL[p.id] = (seeds[p.id] || seeds.default).map((n, i) => ({
+      id: `${personalDomainId(p.id)}/note-${i + 1}`, title: n.title, body: n.body,
+    }));
+  }
+}
+
+function myNotes() { return PERSONAL[state.principal] || []; }
+function noteById(id) { for (const list of Object.values(PERSONAL)) { const n = list.find((x) => x.id === id); if (n) return n; } return null; }
+function sharesForMe() { return SHARES.filter((s) => s.to === state.principal); }
+
+function renderPersonal() {
+  const owner = $("#personalowner");
+  if (owner) owner.textContent = `Acting as ${friendly(state.principal)} · ${personalDomainId(state.principal)}`;
+  const list = $("#personallist");
+  if (list) {
+    list.innerHTML = "";
+    const notes = myNotes();
+    if (!notes.length) list.innerHTML = '<li class="empty" style="padding:6px 2px">No notes yet. Add one, and only you will see it.</li>';
+    for (const n of notes) {
+      const li = document.createElement("li"); li.className = "pnote";
+      const row = document.createElement("div"); row.className = "pnote-row";
+      const b = document.createElement("button"); b.className = "pnote-title";
+      const dt = document.createElement("span"); dt.className = "dot personal-dot";
+      const t = document.createElement("span"); t.className = "t"; t.textContent = n.title;
+      b.appendChild(dt); b.appendChild(t);
+      b.addEventListener("click", () => { li.classList.toggle("open"); });
+      const sh = document.createElement("button"); sh.className = "ghostbtn tiny";
+      const sharedCount = SHARES.filter((s) => s.scope === "doc" && s.docId === n.id).length;
+      sh.textContent = sharedCount ? `Shared · ${sharedCount}` : "Share";
+      sh.addEventListener("click", (e) => { e.stopPropagation(); openShare({ scope: "doc", docId: n.id, title: n.title }); });
+      row.appendChild(b); row.appendChild(sh);
+      const body = document.createElement("div"); body.className = "pnote-body"; body.textContent = n.body;
+      li.appendChild(row); li.appendChild(body); list.appendChild(li);
+    }
+  }
+  renderSharedWithYou();
+}
+
+function renderSharedWithYou() {
+  const box = $("#sharedwithyou"); if (!box) return;
+  const mine = sharesForMe();
+  if (!mine.length) { box.innerHTML = ""; return; }
+  let html = '<div class="sharedhead">Shared with you</div><ul class="doclist">';
+  for (const s of mine) {
+    if (s.scope === "space") {
+      const notes = PERSONAL[s.by] || [];
+      html += `<li class="pnote shared"><div class="pnote-row"><span class="pnote-title"><span class="dot shared-dot"></span><span class="t">${esc(friendly(s.by))}'s personal space</span></span><span class="kindbadge kind-shared">${s.write ? "read+write" : "read"}</span></div>`;
+      html += `<div class="pnote-body">${notes.map((n) => `<b>${esc(n.title)}</b><br>${esc(n.body)}`).join("<br><br>") || "(empty)"}</div></li>`;
+    } else {
+      const n = noteById(s.docId);
+      html += `<li class="pnote shared"><div class="pnote-row"><span class="pnote-title"><span class="dot shared-dot"></span><span class="t">${esc(s.docTitle)}</span></span><span class="kindbadge kind-shared">from ${esc(friendly(s.by))}</span></div>`;
+      html += `<div class="pnote-body">${n ? esc(n.body) : "(unavailable)"}</div></li>`;
+    }
+  }
+  html += "</ul>";
+  box.innerHTML = html;
+}
+
+function openShare(ctx) {
+  shareCtx = ctx;
+  $("#sharetitle").textContent = ctx.scope === "space" ? "Share your personal space" : "Share a note";
+  $("#sharelead").textContent = ctx.scope === "space"
+    ? "Everyone you pick can read every note in your personal space, until you revoke it."
+    : `Share "${ctx.title}". They see just this note, alongside their own domains.`;
+  const sel = $("#sharewith"); sel.innerHTML = "";
+  for (const p of PRINCIPALS) {
+    if (p.id === state.principal) continue;
+    const o = document.createElement("option"); o.value = p.id; o.textContent = friendly(p.id); sel.appendChild(o);
+  }
+  $("#sharewrite").checked = false;
+  renderShareList();
+  $("#sharemodal").hidden = false;
+}
+function closeShare() { $("#sharemodal").hidden = true; shareCtx = null; }
+
+function currentCtxShares() {
+  return SHARES.filter((s) => s.by === state.principal &&
+    (shareCtx.scope === "space" ? s.scope === "space" : s.scope === "doc" && s.docId === shareCtx.docId));
+}
+function renderShareList() {
+  const wrap = $("#sharelistwrap"); if (!wrap) return;
+  const existing = currentCtxShares();
+  if (!existing.length) { wrap.innerHTML = '<p class="addnote" style="margin:12px 0 0">Not shared with anyone yet.</p>'; return; }
+  let html = '<div class="sharedhead" style="margin-top:14px">Currently shared with</div><ul class="sharelist">';
+  for (const s of existing) {
+    html += `<li><span class="dot shared-dot"></span>${esc(friendly(s.to))}${s.write ? " · write" : ""}<button class="ghostbtn tiny" data-revoke="${esc(s.to)}">Revoke</button></li>`;
+  }
+  html += "</ul>";
+  wrap.innerHTML = html;
+  wrap.querySelectorAll("[data-revoke]").forEach((btn) => btn.addEventListener("click", () => {
+    const to = btn.dataset.revoke;
+    SHARES = SHARES.filter((s) => !(s.by === state.principal && s.to === to &&
+      (shareCtx.scope === "space" ? s.scope === "space" : s.scope === "doc" && s.docId === shareCtx.docId)));
+    renderShareList(); renderPersonal();
+  }));
+}
+function doShare() {
+  const to = $("#sharewith").value;
+  if (!to || !shareCtx) return;
+  const write = $("#sharewrite").checked;
+  // Replace any existing grant to the same principal for this target (idempotent).
+  SHARES = SHARES.filter((s) => !(s.by === state.principal && s.to === to &&
+    (shareCtx.scope === "space" ? s.scope === "space" : s.scope === "doc" && s.docId === shareCtx.docId)));
+  SHARES.push({
+    by: state.principal, to, scope: shareCtx.scope,
+    docId: shareCtx.docId || null, docTitle: shareCtx.title || null, write,
+  });
+  renderShareList(); renderPersonal();
+}
+
+function addNote() {
+  const title = $("#notetitle").value.trim(), body = $("#notebody").value.trim();
+  if (!title && !body) return;
+  const list = PERSONAL[state.principal] || (PERSONAL[state.principal] = []);
+  list.unshift({ id: `${personalDomainId(state.principal)}/note-${Date.now()}`, title: title || "Untitled note", body });
+  $("#notetitle").value = ""; $("#notebody").value = "";
+  $("#notemodal").hidden = true;
+  renderPersonal();
+}
+
+function initPersonal() {
+  seedPersonal();
+  $("#sharespace").addEventListener("click", () => openShare({ scope: "space" }));
+  $("#addnote").addEventListener("click", () => { $("#notemodal").hidden = false; $("#notetitle").focus(); });
+  $("#sharedo").addEventListener("click", doShare);
+  $("#notedo").addEventListener("click", addNote);
+  document.querySelectorAll("[data-close-share]").forEach((el) => el.addEventListener("click", closeShare));
+  document.querySelectorAll("[data-close-note]").forEach((el) => el.addEventListener("click", () => { $("#notemodal").hidden = true; }));
 }
 
 // ============================================================================
