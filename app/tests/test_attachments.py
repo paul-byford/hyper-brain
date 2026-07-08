@@ -44,6 +44,30 @@ def _docx_bytes(document_xml: str = _DOCX_XML) -> bytes:
     return buffer.getvalue()
 
 
+def _pdf_bytes(text: str) -> bytes:
+    """A minimal but valid single-page PDF containing ``text`` (correct xref table)."""
+    stream = b"BT /F1 18 Tf 72 700 Td (%s) Tj ET" % text.encode()
+    objs = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R"
+        b"/Resources<</Font<</F1 5 0 R>>>>>>",
+        b"<</Length %d>>stream\n%s\nendstream" % (len(stream), stream),
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+    ]
+    pdf = b"%PDF-1.4\n"
+    offsets = []
+    for i, body in enumerate(objs, 1):
+        offsets.append(len(pdf))
+        pdf += b"%d 0 obj" % i + body + b"\nendobj\n"
+    xref = len(pdf)
+    pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for off in offsets:
+        pdf += b"%010d 00000 n \n" % off
+    pdf += b"trailer<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF" % (len(objs) + 1, xref)
+    return pdf
+
+
 def _ident(sub, email=None, groups=()):
     return identity_from_claims({"sub": sub, "email": email or sub, "groups": list(groups)})
 
@@ -72,6 +96,13 @@ def test_docx_parser_rejects_non_docx():
 def test_get_parser_routes_docx():
     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     assert isinstance(get_parser(mime), DocxParser)
+
+
+def test_get_parser_routes_pdf_to_pypdf_when_no_docai():
+    from brain_app.ingest.parsers.pdf import PdfParser
+
+    # Without a Document AI processor configured, PDFs use the in-tenancy pypdf path.
+    assert isinstance(get_parser("application/pdf"), PdfParser)
 
 
 def test_safe_filename_strips_paths_and_unsafe_chars():
@@ -132,6 +163,25 @@ def test_unsupported_file_type_is_refused(svc):
     owner = _ident("sub-att")
     with pytest.raises(AccessError):
         svc.ingest_file(owner, filename="malware.exe", content_base64=_b64(b"MZ"))
+
+
+def test_pdf_text_is_extracted_and_ingested(svc):
+    pytest.importorskip("pypdf")
+    owner = _ident("sub-att", email="a@example.com")
+    svc.ingest_file(
+        owner,
+        filename="report.pdf",
+        content_base64=_b64(_pdf_bytes("Quarterly fraud review notes")),
+    )
+    assert "Quarterly fraud review notes" in svc.note_gate.proposals[0].content
+
+
+def test_corrupt_pdf_is_a_clean_client_error_not_a_500(svc):
+    pytest.importorskip("pypdf")
+    # A non-PDF (or corrupt) file uploaded as .pdf must be a clean error, never crash.
+    owner = _ident("sub-att")
+    with pytest.raises(ValueError):
+        svc.ingest_file(owner, filename="broken.pdf", content_base64=_b64(b"not a pdf at all"))
 
 
 def test_non_base64_content_is_refused(svc):

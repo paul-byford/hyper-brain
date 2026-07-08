@@ -41,8 +41,11 @@ def test_get_parser_dispatch_and_charset_suffix():
         get_parser("application/x-msdownload")
 
 
-def test_pdf_real_parser_refuses_offline_but_fake_stands_in():
-    with pytest.raises(NotImplementedError):
-        PdfParser().parse(b"%PDF-1.7", "application/pdf")
+def test_pdf_parser_reports_a_clean_error_on_bad_input():
+    # The real PDF parser (pypdf, in-tenancy) raises a clear ValueError on non-PDF
+    # bytes rather than crashing; the fake still stands in for pipeline tests.
+    pytest.importorskip("pypdf")
+    with pytest.raises(ValueError):
+        PdfParser().parse(b"not a pdf", "application/pdf")
     parsed = FakePdfParser().parse(b"plain text body", "application/pdf")
     assert parsed.body == "plain text body"

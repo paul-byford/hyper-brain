@@ -284,7 +284,7 @@ function renderPersonalLive() {
     for (const p of pending) {
       const li = document.createElement("li"); li.className = "pnote";
       // A (non-interactive) button, matching the real notes below, so it aligns.
-      li.innerHTML = `<div class="pnote-row"><button type="button" class="pnote-title" disabled><span class="dot personal-dot"></span><span class="t">${esc(p.title)}</span></button><span class="kindbadge kind-personal">pending index</span></div>`;
+      li.innerHTML = `<div class="pnote-row"><button type="button" class="pnote-title" disabled><span class="dot personal-dot"></span><span class="t">${esc(p.title)}</span></button><span class="kindbadge kind-personal">${esc(p.status || "pending index")}</span></div>`;
       list.appendChild(li);
     }
     for (const n of notes) {
@@ -389,15 +389,24 @@ function wireLive() {
   $("#uploadbtn").addEventListener("click", () => $("#fileinput").click());
   $("#fileinput").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0]; if (!file) return;
+    // Show the item immediately with an "uploading" badge (like a note), then flip to
+    // "pending index" on success, or remove it and surface the error on failure.
+    const entry = { title: file.name, status: "uploading" };
+    PENDING_NOTES.unshift(entry);
+    renderPersonal();
     flashUpload(`Uploading ${file.name}…`);
     try {
       const b64 = await fileToBase64(file);
       await API.upload(file.name, b64);
       $("#fileinput").value = "";
-      PENDING_NOTES.unshift({ title: file.name });
+      entry.status = "pending index";
       broadcastPending(file.name);
       await reloadLiveDocs(`Uploaded ${file.name}. indexing now, searchable in a few minutes.`);
-    } catch (err) { flashUpload(String(err.message || err)); }
+    } catch (err) {
+      PENDING_NOTES = PENDING_NOTES.filter((p) => p !== entry);
+      renderPersonal();
+      flashUpload(String(err.message || err));
+    }
   });
 }
 
@@ -839,7 +848,16 @@ function draw() {
     }
   }
 }
-function loop() { step(); draw(); requestAnimationFrame(loop); }
+function loop() {
+  // While the layout is still settling (and not being dragged), advance the physics
+  // a few ticks per rendered frame. This fast-forwards the opening animation to a
+  // readable layout ~3x sooner while keeping the render itself a smooth 60fps and the
+  // final layout identical. Dragging and the settled state stay at one tick.
+  const ticks = !drag && alpha > 0.15 ? 3 : 1;
+  for (let i = 0; i < ticks; i++) step();
+  draw();
+  requestAnimationFrame(loop);
+}
 function nodeAt(x, y) {
   let best = null, bd = 16 * 16;
   for (const n of nodes) {

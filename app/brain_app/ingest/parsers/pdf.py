@@ -43,12 +43,22 @@ class DocumentAiParser:
 
 
 class PdfParser:
+    """Pure-Python PDF text extraction (pypdf), in-tenancy: the bytes never leave the
+    container. Good for text-based PDFs; a scanned/image-only PDF yields no text (the
+    caller reports that), which is when the Document AI processor is worth configuring."""
+
     def parse(self, content: bytes, mime: str) -> ParsedDoc:
-        raise NotImplementedError(
-            "PDF parsing runs in-tenancy via Vertex AI Document AI and is wired in a "
-            "later cloud phase (ARCHITECTURE.md section 12). Use the deterministic "
-            "FakePdfParser in tests, or convert the source to markdown/HTML upstream."
-        )
+        import io
+
+        from pypdf import PdfReader
+        from pypdf.errors import PyPdfError
+
+        try:
+            reader = PdfReader(io.BytesIO(content))
+            parts = [(page.extract_text() or "").strip() for page in reader.pages]
+        except (PyPdfError, ValueError, OSError) as exc:
+            raise ValueError(f"could not read the PDF: {exc}") from exc
+        return ParsedDoc(body="\n\n".join(p for p in parts if p).strip(), tags=[])
 
 
 class FakePdfParser:

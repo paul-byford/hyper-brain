@@ -438,9 +438,19 @@ class BrainService:
         ):
             from ..ingest.parsers import get_parser
 
-            body = get_parser(mime).parse(raw, mime).body.strip()
+            # Any parser failure (corrupt/unsupported content, or a format that needs
+            # a component not configured here) becomes a clean client error, never a
+            # 500. NotImplementedError covers the PDF-via-Document-AI stub when unset.
+            try:
+                body = get_parser(mime).parse(raw, mime).body.strip()
+            except NotImplementedError as exc:
+                raise ValueError(str(exc)) from exc
+            except (ValueError, KeyError, OSError) as exc:
+                raise ValueError(f"could not read {filename}: {exc}") from exc
             if not body:
-                raise AccessError("no text could be extracted from the file")
+                raise ValueError(
+                    "no text could be extracted (a scanned/image-only PDF needs Document AI)"
+                )
             resolved_title = (title or _title_from_filename(filename)).strip() or filename
 
             uri = self.attachment_store.put(target, filename, raw)
