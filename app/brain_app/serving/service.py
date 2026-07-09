@@ -377,10 +377,14 @@ class BrainService:
         title: str,
         content: str,
         source_url: str | None = None,
+        tags: list[str] | None = None,
     ) -> ProposalResult:
         """Write a note into the caller's own personal domain. Ungated: the caller
         owns this space, so there is nothing to review. The note is searchable once
-        the index rebuilds (the path any content takes), same as commons content."""
+        the index rebuilds (the path any content takes), same as commons content.
+
+        The slug is derived from the title, so re-submitting a note with the same
+        title overwrites it: that is how :meth:`link_notes` edits a note in place."""
         personal = personal_domain(identity)
         if personal is None:
             raise AccessError("an anonymous caller has no personal domain to write to")
@@ -393,10 +397,94 @@ class BrainService:
                 content=content,
                 author=identity.email or identity.subject,
                 source_url=source_url,
+                tags=tags,
             )
             result = self.note_gate.submit(proposal)
             self.reindexer.trigger()  # make the note searchable promptly
             return result
+
+    # ---- Autolinker: suggest and create links among the caller's own notes -------
+    def _personal_note_ids(self, identity: Identity) -> list[str]:
+        personal = personal_domain(identity)
+        if personal is None:
+            return []
+        return [d.doc_id for d in self.index.documents.values() if d.domain == personal]
+
+    def suggest_note_links(self, identity: Identity, *, top_k: int = 8) -> list[dict]:
+        """Candidate links among the caller's personal notes, by embedding similarity.
+
+        Only the caller's own personal notes are considered (a link can only resolve
+        within a domain), and pairs already linked are excluded. Each suggestion is a
+        pair of notes with a similarity score; the caller decides which to create."""
+        from .linker import suggest_links
+
+        note_ids = self._personal_note_ids(identity)
+        if len(note_ids) < 2:
+            return []
+        with span("brain.suggest_note_links", **{"brain.principal": identity.subject}):
+            index = self.index
+            pairs = suggest_links(index, note_ids, index.adjacency, top_k=top_k)
+            docs = index.documents
+            return [
+                {
+                    "source": a,
+                    "target": b,
+                    "source_title": docs[a].title,
+                    "target_title": docs[b].title,
+                    "score": round(score, 3),
+                    "reason": "Semantically similar content",
+                }
+                for score, a, b in pairs
+            ]
+
+    @staticmethod
+    def _strip_title(text: str, title: str) -> str:
+        """Drop the leading ``# Title`` heading from a reconstructed note body, so a
+        re-added note is not given a duplicate title heading."""
+        head = f"# {title}"
+        if text.startswith(head):
+            return text[len(head) :].lstrip("\n")
+        return text
+
+    @staticmethod
+    def _append_related(body: str, link_line: str) -> str:
+        """Append a link under a ``## Related`` section, creating it if absent."""
+        marker = "## Related"
+        if marker in body:
+            return f"{body.rstrip()}\n{link_line}\n"
+        return f"{body.rstrip()}\n\n{marker}\n\n{link_line}\n"
+
+    def link_notes(self, identity: Identity, source_id: str, target_id: str) -> dict:
+        """Link one personal note to another by adding a ``[[wikilink]]`` to the
+        source note (which the next index build turns into a graph edge).
+
+        Both notes must be in the caller's own personal space; anything else is
+        refused, matching the intra-domain rule the link graph already enforces."""
+        personal = personal_domain(identity)
+        if personal is None:
+            raise AccessError("an anonymous caller has no personal space to link within")
+        if source_id == target_id:
+            raise ValueError("a note cannot be linked to itself")
+        for doc_id in (source_id, target_id):
+            if doc_id.rsplit("/", 1)[0] != personal:
+                raise AccessError("you can only link notes in your own personal space")
+        with span(
+            "brain.link_notes",
+            **{"brain.principal": identity.subject, "brain.doc_id": source_id},
+        ):
+            source = self.get_document(identity, source_id)  # also enforces visibility
+            target = self.get_document(identity, target_id)
+            wikilink = f"[[{target['title']}]]"
+            body = self._strip_title(source["text"], source["title"])
+            if wikilink in body:
+                return {"status": "exists", "source": source_id, "target": target_id,
+                        "detail": "these notes are already linked"}
+            new_body = self._append_related(body, f"- {wikilink}")
+            result = self.add_note(
+                identity, title=source["title"], content=new_body, tags=source.get("tags")
+            )
+            return {"status": "linked", "source": source_id, "target": target_id,
+                    "detail": result.detail}
 
     def ingest_file(
         self,

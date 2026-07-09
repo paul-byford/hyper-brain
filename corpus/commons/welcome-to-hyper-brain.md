@@ -32,4 +32,12 @@ signed-in person can read, so it is the first thing a new joiner lands on.
 Access is granted by domain. Your teams and the commons come from the company
 policy; your personal space is yours automatically; and anything shared with you
 shows up alongside your own domains. A caller only ever retrieves from the
-sub-graph they may read.
+sub-graph they may read. For the precise definitions, see the [[Glossary]] and
+[[Security and privacy basics]].
+
+## Where to next
+
+- [[Getting started with the brain]] for the short path from sign-in to value.
+- [[Writing good notes]] to capture and connect what you learn.
+- [[Company handbook]] for the shared reference material.
+- [[Sharing and collaboration]] for handing work to colleagues, safely.

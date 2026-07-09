@@ -228,6 +228,7 @@ async function bootLive(me, docs) {
   loop();
   initLiveChannel(); // cross-tab pending-note updates (same browser)
   startLivePoll(); // keep this tab current (picks up content added anywhere)
+  ensureIdxTicker(); // live "indexing…" status while added content is pending
   setPage("connect"); // Open on the Overview tab.
 }
 
@@ -368,6 +369,63 @@ function renderPersonalLive() {
       box.querySelectorAll("[data-doc]").forEach((a) => a.addEventListener("click", () => openDocument(a.dataset.doc)));
     }
   }
+  renderLinksBox();
+}
+
+// ---- Autolinker: connect your own notes -------------------------------------
+function personalNotes() {
+  const pd = ME && ME.personal && ME.personal.domain;
+  return pd ? index.documents.filter((d) => d.domain === pd) : [];
+}
+function renderLinksBox() {
+  const box = $("#linksbox"); if (!box) return;
+  const notes = personalNotes();
+  if (notes.length < 2) { box.hidden = true; return; } // nothing to connect yet
+  box.hidden = false;
+  const opts = notes.map((n) => `<option value="${esc(n.doc_id)}">${esc(n.title)}</option>`).join("");
+  const src = $("#linksrc"), dst = $("#linkdst");
+  if (src && dst) {
+    const keepSrc = src.value, keepDst = dst.value;
+    src.innerHTML = opts; dst.innerHTML = opts;
+    if ([...src.options].some((o) => o.value === keepSrc)) src.value = keepSrc;
+    if ([...dst.options].some((o) => o.value === keepDst)) dst.value = keepDst;
+    else if (dst.options.length > 1) dst.selectedIndex = 1; // default to a different note
+  }
+}
+async function loadLinkSuggestions() {
+  const wrap = $("#linksuggestions"); if (!wrap) return;
+  wrap.innerHTML = '<p class="addnote" style="margin:6px 0">Looking for related notes…</p>';
+  let suggestions;
+  try { suggestions = await API.linkSuggestions(); }
+  catch (e) { wrap.innerHTML = `<p class="addnote" style="margin:6px 0">${esc(e.message || String(e))}</p>`; return; }
+  if (!suggestions.length) {
+    wrap.innerHTML = '<p class="addnote" style="margin:6px 0">No new suggestions. Your related notes may already be linked.</p>';
+    return;
+  }
+  wrap.innerHTML = suggestions.map((s) => `
+    <div class="linkrow" data-src="${esc(s.source)}" data-dst="${esc(s.target)}">
+      <div class="linkpair"><span class="lp">${esc(s.source_title)}</span><span class="linkarrow">↔</span><span class="lp">${esc(s.target_title)}</span></div>
+      <div class="linkmeta mono">${Math.round(s.score * 100)}% · ${esc(s.reason)}</div>
+      <div class="linkacts"><button class="gobtn tiny linkadd">Add</button><button class="ghostbtn tiny linkskip">Dismiss</button></div>
+    </div>`).join("");
+  wrap.querySelectorAll(".linkrow").forEach((row) => {
+    row.querySelector(".linkadd").addEventListener("click", () => doLink(row.dataset.src, row.dataset.dst, row));
+    row.querySelector(".linkskip").addEventListener("click", () => row.remove());
+  });
+}
+async function doLink(source, target, row) {
+  const status = $("#linkstatus");
+  try {
+    const r = await API.link(source, target);
+    const msg = r.status === "exists"
+      ? "Those notes are already linked."
+      : "Linked. It appears in the graph once the index rebuilds.";
+    if (status) status.innerHTML = `<p class="addnote" style="margin:6px 0">${msg}</p>`;
+    if (row) row.remove();
+    startLivePoll(); // pick up the reindexed edge
+  } catch (e) {
+    if (status) status.innerHTML = `<p class="addnote" style="margin:6px 0">${esc(e.message || String(e))}</p>`;
+  }
 }
 
 async function renderReview() {
@@ -429,17 +487,38 @@ function broadcastPending(title) { broadcast("pending", { title }); }
 // Wire the live-only actions (add note, upload, share space) to the REST facade.
 function wireLive() {
   $("#addnote").addEventListener("click", () => { $("#notemodal").hidden = false; $("#notetitle").focus(); });
+  $("#suggestlinks").addEventListener("click", loadLinkSuggestions);
+  $("#linkbtn").addEventListener("click", () => {
+    const s = $("#linksrc").value, t = $("#linkdst").value;
+    if (s && t && s !== t) doLink(s, t);
+    else if ($("#linkstatus")) $("#linkstatus").innerHTML = '<p class="addnote" style="margin:6px 0">Pick two different notes.</p>';
+  });
   $("#notedo").addEventListener("click", async () => {
     const title = $("#notetitle").value.trim(), content = $("#notebody").value.trim();
     if (!title && !content) return;
     const noteTitle = title || "Untitled note";
     $("#notemodal").hidden = true; $("#notetitle").value = ""; $("#notebody").value = "";
+    // Optimistic: show the note at once with a "saving" badge, so a slow save still
+    // gives instant feedback instead of a blank wait until the request returns. It
+    // flips to "pending index" on success, or rolls back and restores the draft on
+    // failure so the user can retry without retyping.
+    const entry = { title: noteTitle, status: "saving" };
+    PENDING_NOTES.unshift(entry);
+    renderPersonal(); renderIndexStatus();
+    flashUpload(`Saving “${noteTitle}”…`);
     try {
       await API.note(noteTitle, content);
-      PENDING_NOTES.unshift({ title: noteTitle });
+      entry.status = "pending index";
       broadcastPending(noteTitle);
-      await reloadLiveDocs("Note saved to your personal space. indexing now, searchable in a few minutes.");
-    } catch (e) { flashUpload(String(e.message || e)); }
+      renderPersonal(); renderIndexStatus();
+      flashUpload("Note saved. Indexing now, searchable in a few minutes.");
+      startLivePoll();
+    } catch (e) {
+      PENDING_NOTES = PENDING_NOTES.filter((p) => p !== entry); // roll back the optimistic add
+      renderPersonal(); renderIndexStatus();
+      $("#notetitle").value = title; $("#notebody").value = content; $("#notemodal").hidden = false;
+      flashUpload(`Could not save the note: ${e.message || e}`);
+    }
   });
   document.querySelectorAll("[data-close-note]").forEach((el) => el.addEventListener("click", () => { $("#notemodal").hidden = true; }));
 
@@ -500,6 +579,44 @@ function applyLiveDocs(docs) {
   $("#doccount").textContent = docs.length;
   syncLiveGraph();
   renderScope(); renderBrowser(); renderLegend(); renderPersonal();
+  renderIndexStatus();
+}
+
+// ---- Background-indexing status ---------------------------------------------
+// Adding a note or file triggers a background re-index (a Cloud Run job that
+// rebuilds the index). The job does not report granular progress, so we show what
+// we can know honestly: how many just-added items are still pending, how long it has
+// been, and a clear "done" once the poll sees them indexed.
+let idxStartedAt = 0, idxDoneUntil = 0, idxTicker = null;
+function _mmss(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function renderIndexStatus() {
+  const el = $("#idxstatus"), txt = $("#idxtext");
+  if (!el || !txt) return;
+  const n = PENDING_NOTES.length;
+  if (n > 0) {
+    if (!idxStartedAt) idxStartedAt = Date.now();
+    idxDoneUntil = 0;
+    const elapsed = Date.now() - idxStartedAt;
+    let s = `Indexing ${n} item${n === 1 ? "" : "s"}… ${_mmss(elapsed)}`;
+    if (elapsed > 180000) s += " · longer than usual";
+    el.hidden = false; el.className = "idxstatus working";
+    txt.textContent = s;
+    return;
+  }
+  if (idxStartedAt) { idxDoneUntil = Date.now() + 6000; idxStartedAt = 0; } // just finished
+  if (idxDoneUntil && Date.now() < idxDoneUntil) {
+    el.hidden = false; el.className = "idxstatus done";
+    txt.textContent = "✓ Indexed · up to date";
+    return;
+  }
+  el.hidden = true;
+}
+function ensureIdxTicker() {
+  if (idxTicker || !LIVE) return;
+  idxTicker = setInterval(renderIndexStatus, 1000); // keeps the elapsed time live
 }
 
 // Add any new document as a graph node without disturbing the existing layout, then

@@ -207,7 +207,8 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
 
     model = model or os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
     user = identity.subject or "user"
-    yield _sse({"step": {"edge": ["you", "coord"], "caption": f"You asked: “{query.strip()[:80]}”"}})
+    asked = f"You asked: “{query.strip()[:80]}”"
+    yield _sse({"step": {"edge": ["you", "coord"], "caption": asked}})
 
     final_author = "researcher"
     answer = ""

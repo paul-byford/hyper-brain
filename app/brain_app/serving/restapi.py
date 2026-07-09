@@ -146,6 +146,17 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
         data = await request.json()
         return JSONResponse(service.accept_proposal(identity, str(data["name"])))
 
+    async def link_suggestions(request, identity):
+        return JSONResponse({"suggestions": service.suggest_note_links(identity)})
+
+    async def link(request, identity):
+        data = await request.json()
+        source = str(data.get("source", "")).strip()
+        target = str(data.get("target", "")).strip()
+        if not source or not target:
+            return JSONResponse({"error": "source and target are required"}, status_code=400)
+        return JSONResponse(service.link_notes(identity, source, target))
+
     async def agent_run(request, identity):
         # Run the real multi-agent ADK team, scoped to this caller, and return the
         # execution trace (for the Agents-page animation) plus the final answer.
@@ -190,3 +201,5 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/accept", ["POST"], accept)
     route("/api/agent/run", ["POST"], agent_run)
     route("/api/agent/stream", ["POST"], agent_stream)
+    route("/api/link/suggestions", ["GET"], link_suggestions)
+    route("/api/link", ["POST"], link)

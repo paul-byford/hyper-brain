@@ -159,6 +159,19 @@
   .hashchip b { color: var(--signal-ink); font-weight: 600; }
   .livedot { width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 0 var(--signal); animation: pulse 2.4s infinite; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+  /* Background-indexing status: shown while just-added content is being indexed. */
+  .idxstatus {
+    display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono);
+    font-size: 11px; padding: 5px 10px; border-radius: 9px; border: 1px solid var(--hair);
+    white-space: nowrap;
+  }
+  .idxstatus[hidden] { display: none; }
+  .idxstatus.working { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, var(--hair)); background: color-mix(in srgb, var(--signal) 10%, transparent); }
+  .idxstatus.done { color: var(--domain-3); border-color: color-mix(in srgb, var(--domain-3) 45%, var(--hair)); background: color-mix(in srgb, var(--domain-3) 10%, transparent); }
+  .idxspin { width: 10px; height: 10px; flex: none; border: 2px solid color-mix(in srgb, var(--signal) 28%, transparent); border-top-color: var(--signal); border-radius: 50%; animation: bootspin .8s linear infinite; }
+  .idxstatus.done .idxspin { display: none; }
+  @media (prefers-reduced-motion: reduce) { .idxspin { animation: none; } }
   .themetgl {
     background: var(--panel); border: 1px solid var(--hair); border-radius: 9px;
     width: 34px; height: 34px; flex: none; display: grid; place-items: center; box-shadow: var(--shadow); font-size: 15px;
@@ -636,6 +649,29 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .agentanswerbody { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
 .agentlivehint { flex-basis: 100%; margin: 2px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
 .agentlivehint b { color: var(--ink); }
+
+/* ---- Autolinker: connect your notes (personal space) ---- */
+.linksbox { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hair); display: flex; flex-direction: column; gap: 9px; }
+.linksbox[hidden] { display: none; }
+.linkshead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.linkmanual { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.linksel {
+  flex: 1 1 120px; min-width: 0; background: var(--panel-2); border: 1px solid var(--hair);
+  color: var(--ink); font-family: var(--mono); font-size: 11.5px;
+  padding: 6px 26px 6px 8px; /* room on the right so the chevron never overlaps the text */
+  text-overflow: ellipsis;
+}
+.linkarrow { color: var(--muted); flex: none; }
+.gobtn.tiny, .ghostbtn.tiny { font-size: 11px; padding: 5px 10px; }
+.linksuggestions { display: flex; flex-direction: column; gap: 7px; }
+.linkrow {
+  display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--hair);
+  background: var(--panel); box-shadow: var(--shadow); padding: 9px 11px;
+}
+.linkpair { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.linkpair .lp { font-weight: 600; }
+.linkmeta { font-size: 10.5px; color: var(--muted); }
+.linkacts { display: flex; gap: 7px; }
 
 /* ---- Agents page: model inventory & prompt versioning registry ---- */
 .agentreg { border-top: 1px solid var(--hair); padding-top: 16px; display: flex; flex-direction: column; gap: 14px; }

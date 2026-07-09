@@ -71,6 +71,9 @@
       <button data-page="review" id="reviewtab" hidden>Review</button>
     </nav>
     <div class="bar-right">
+      <div class="idxstatus" id="idxstatus" hidden title="New content is indexed in the background. This usually takes 1 to 2 minutes.">
+        <span class="idxspin" aria-hidden="true"></span><span class="idxtext" id="idxtext"></span>
+      </div>
       <div class="hashchip"><span class="livedot"></span> index <b id="hash">52aaa08ce4ae</b> · <span id="doccount">12</span> docs</div>
       <div class="userchip" id="userchip" hidden><span class="dot personal-dot"></span><span id="username"></span><button class="ghostbtn tiny" id="signout">Sign out</button></div>
       <button class="themetgl" id="theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
@@ -135,6 +138,20 @@
             <input type="file" id="fileinput" accept=".pdf,.docx,.md,.markdown,.txt,.html,.htm" hidden />
           </div>
           <div id="uploadstatus"></div>
+          <div class="linksbox" id="linksbox" hidden>
+            <div class="linkshead">
+              <span class="eyebrow">Connect your notes</span>
+              <button class="ghostbtn tiny" id="suggestlinks" title="Suggest links between related notes">✧ Suggest links</button>
+            </div>
+            <div class="linkmanual">
+              <select id="linksrc" class="linksel" aria-label="Link from note"></select>
+              <span class="linkarrow">→</span>
+              <select id="linkdst" class="linksel" aria-label="Link to note"></select>
+              <button class="gobtn tiny" id="linkbtn">Link</button>
+            </div>
+            <div id="linksuggestions" class="linksuggestions"></div>
+            <div id="linkstatus"></div>
+          </div>
           <div id="sharedwithyou"></div>
         </div>
       </section>

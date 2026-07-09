@@ -54,6 +54,7 @@ def build_proposal(
     source_url: str | None = None,
     now: str | None = None,
     run_id: str | None = None,
+    tags: list[str] | None = None,
 ) -> Proposal:
     """Stamp an agent-authored document into a landable proposal.
 
@@ -68,7 +69,7 @@ def build_proposal(
     stamped = _stamp(
         title=resolved_title,
         domain=domain,
-        tags=[],
+        tags=list(tags or []),
         source_id=f"agent:{author}",
         source_url=source_url or f"proposal:{author}",
         fetched_at=now or _utc_now(),

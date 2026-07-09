@@ -36,6 +36,8 @@ export const api = (apiUrl) => ({
   proposals: () => call(apiUrl, "/api/proposals").then((d) => d.proposals),
   accept: (name) => call(apiUrl, "/api/accept", { method: "POST", body: { name } }),
   agentRun: (query) => call(apiUrl, "/api/agent/run", { method: "POST", body: { query } }),
+  linkSuggestions: () => call(apiUrl, "/api/link/suggestions").then((d) => d.suggestions),
+  link: (source, target) => call(apiUrl, "/api/link", { method: "POST", body: { source, target } }),
 });
 
 // Read a File object as base64 (no data: prefix), for /api/upload.
