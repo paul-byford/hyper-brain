@@ -91,11 +91,23 @@ cmd_preflight() { bash "$ROOT/scripts/preflight.sh" "$PROJECT" >/dev/null; }
 cmd_index() { info "Building local index from corpus/"; "$(python_bin)" -m brain_app.indexer.build --corpus corpus --out .brain/index.json; }
 cmd_ingest() { info "Ingesting configured sources into corpus/"; "$(python_bin)" -m brain_app.ingest.run --sources config/sources.yaml --corpus corpus; }
 cmd_eval() { info "Running the offline eval tier"; "$(python_bin)" -m pytest app/tests -q -m eval; }
+cmd_platform() { "$(python_bin)" -m brain_app.inventory; }
 
 cmd_agent() {
   require adk "Install the agent extra: pip install -e ./app[agent]"
-  info "Starting the agent dev UI (offline). Ctrl+C to stop."
-  adk web "$ROOT/app/brain_app"
+  cd "$ROOT/app" || die "cannot enter app dir"
+  if [ -n "$LIVE" ]; then
+    [ -n "$BRAIN_TOKEN" ] || die "set BRAIN_TOKEN first (copy it from the signed-in UI: sessionStorage.getItem('hb_access_token'))"
+    local brain_url; brain_url="$(tf_output brain_url)"
+    [ -n "$brain_url" ] || die "no deployed brain found; run ./brain up first"
+    export BRAIN_AGENT_MODE=live BRAIN_URL="$brain_url/mcp" BRAIN_AUDIENCE="$brain_url"
+    export GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT="$(resolve_project)" GOOGLE_CLOUD_LOCATION="$REGION"
+    info "Starting the LIVE multi-agent team (Gemini on Vertex, brain over MCP). Ctrl+C to stop."
+  else
+    export BRAIN_AGENT_MODE=offline
+    info "Starting the agent dev UI (offline). Ctrl+C to stop. Use --live for the real team."
+  fi
+  adk web agents
 }
 
 cmd_ui() {
@@ -246,6 +258,7 @@ while [ $# -gt 0 ]; do
     --region) REGION="$2"; shift 2;;
     --domains) DOMAINS="$2"; shift 2;;
     --wait) WAIT=1; shift;;
+    --live) LIVE=1; shift;;
     *) POSITIONAL+=("$1"); shift;;
   esac
 done
@@ -258,6 +271,7 @@ case "$COMMAND" in
   index) cmd_index;;
   ingest) cmd_ingest;;
   eval) cmd_eval;;
+  platform) cmd_platform;;
   agent) cmd_agent;;
   ui) cmd_ui;;
   connect) cmd_connect;;

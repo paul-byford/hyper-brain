@@ -19,7 +19,7 @@ WORKDIR /app
 # its policy from GCS (BRAIN_POLICY), so config/ is not baked into the image.
 COPY pyproject.toml requirements.txt ./
 COPY brain_app ./brain_app
-RUN pip install --no-cache-dir -e ".[mcp,vertex,oauth]"
+RUN pip install --no-cache-dir -e ".[mcp,vertex,oauth,otlp,agentrun]"
 
 # Cloud Run sends traffic to $PORT; the server binds it.
 EXPOSE 8080

@@ -146,6 +146,35 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
         data = await request.json()
         return JSONResponse(service.accept_proposal(identity, str(data["name"])))
 
+    async def agent_run(request, identity):
+        # Run the real multi-agent ADK team, scoped to this caller, and return the
+        # execution trace (for the Agents-page animation) plus the final answer.
+        from .agent_run import run_agent_async
+
+        data = await request.json()
+        query = str(data.get("query", "")).strip()
+        if not query:
+            return JSONResponse({"error": "a query is required"}, status_code=400)
+        result = await run_agent_async(service, identity, query)
+        return JSONResponse(result)
+
+    async def agent_stream(request, identity):
+        # Same real run, but streamed: each tool call/transfer is emitted as an SSE
+        # frame the instant it fires, so the Agents page lights edges as they happen.
+        from starlette.responses import StreamingResponse
+
+        from .agent_run import stream_agent_run
+
+        data = await request.json()
+        query = str(data.get("query", "")).strip()
+        if not query:
+            return JSONResponse({"error": "a query is required"}, status_code=400)
+        return StreamingResponse(
+            stream_agent_run(service, identity, query),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     route("/api/me", ["GET"], me)
     route("/api/domains", ["GET"], domains)
     route("/api/documents", ["GET"], documents)
@@ -159,3 +188,5 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/shares", ["GET"], shares)
     route("/api/proposals", ["GET"], proposals)
     route("/api/accept", ["POST"], accept)
+    route("/api/agent/run", ["POST"], agent_run)
+    route("/api/agent/stream", ["POST"], agent_stream)

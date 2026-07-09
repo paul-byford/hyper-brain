@@ -35,6 +35,7 @@ export const api = (apiUrl) => ({
   unshare: (payload) => call(apiUrl, "/api/unshare", { method: "POST", body: payload }),
   proposals: () => call(apiUrl, "/api/proposals").then((d) => d.proposals),
   accept: (name) => call(apiUrl, "/api/accept", { method: "POST", body: { name } }),
+  agentRun: (query) => call(apiUrl, "/api/agent/run", { method: "POST", body: { query } }),
 });
 
 // Read a File object as base64 (no data: prefix), for /api/upload.

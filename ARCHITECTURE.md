@@ -254,18 +254,18 @@ the endpoint). No per-user infrastructure.
 **Four kinds of domain, one mechanism.** A domain is the unit of access; who a
 grant names is the only thing that varies:
 
-- **Commons** — a grant to the wildcard `*` in the base policy, so every signed-in
+- **Commons** - a grant to the wildcard `*` in the base policy, so every signed-in
   caller can read it (onboarding, handbook). The brain is never anonymous, so `*`
   means "any authenticated caller."
-- **Personal** — `personal:{subject}`, derived from the caller's stable subject,
+- **Personal** - `personal:{subject}`, derived from the caller's stable subject,
   never named in the policy. Every caller reads and writes their own; `add_note`
   lands notes here ungated (you own it). Because it is never a declared domain,
   `domains_for` (which intersects with the declared set) means a `*` grant can
   **never** reach anyone's personal domain: the load-bearing invariant of the
   personal space.
-- **Team / org** — an email or `group:` grant in the base policy (`tfvars`),
+- **Team / org** - an email or `group:` grant in the base policy (`tfvars`),
   admin-owned and slow-changing.
-- **Shared** — dynamic, user-authored grants in a **sharing overlay**, merged over
+- **Shared** - dynamic, user-authored grants in a **sharing overlay**, merged over
   the base policy at request time. A user shares a domain or a single document they
   own with a person or group (`share`), revokes it (`unshare`), and what they never
   share stays private for good. The overlay lives as per-owner
@@ -299,13 +299,30 @@ up their own agent.
   Vertex, it deploys to **Cloud Run or Vertex AI Agent Engine** with one command
   (so the agent inherits the same scale-to-zero and IAM story as the brain), and
   it ships a **dev web UI** we reuse for the demo (section 9).
-- **What it does:** given a question, it calls `search` or `answer` on the brain,
-  reasons over the cited results, and responds. Because the brain enforces the
-  domain ACL, the agent is automatically scoped to what the caller may see.
+- **A multi-agent team (live):** the agent is a **coordinator** that delegates over
+  ADK agent transfer to two sub-agents, each with its own MCP toolset filtered to its
+  role: a **researcher** (read tools: search/answer/get_document/list_domains) and a
+  **curator** (search/get_document/**propose_document**). So a question routes to the
+  researcher, and "draft/add a document" routes to the curator, whose proposal lands
+  in the **human review queue** (section 12), never live. The brain enforces the ACL
+  behind every tool, so the whole team is scoped to what the caller may see and write.
+- **Deterministic offline tier:** the same agent runs as a single researcher backed
+  by a `FakeBrainModel` and in-process tools, so the golden and isolation evals
+  (`tool_trajectory` + `response_match`) are hermetic and free in CI.
 - **Two ways to consume the brain, one codebase:** power users point their own
   MCP client (Claude Code, Cursor) at the endpoint; the demo and less technical
   evaluators use the shipped ADK agent and its UI. Both hit the same MCP tools
   under the same auth.
+
+**AI-platform layer (governance).** Two enterprise concerns are made explicit and
+auditable, in-tenancy: a **model inventory** (`config/models.yaml` - what models run,
+their version, purpose, owner and approval) and a **versioned prompt registry**
+(`brain_app/prompts.py` - each agent prompt named, semver'd and content-hashed).
+`brain platform` prints both. **Traces** go to Cloud Trace by default (in-tenancy,
+scale-to-zero); the same OpenTelemetry spans can optionally be exported to a
+self-hosted **Langfuse** (`BRAIN_OTEL=langfuse` + the standard `OTEL_EXPORTER_OTLP_*`
+env) for LLM-native tracing, prompt and eval linkage - kept a toggle so the default
+path stays Google-native and scale-to-zero.
 
 The agent is **convenient, not load-bearing**: the brain stands alone as an MCP
 service, and the ADK agent is the demo-facing consumer. But it is the piece that

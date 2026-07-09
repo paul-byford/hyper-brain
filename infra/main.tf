@@ -18,6 +18,10 @@ locals {
   common_env = {
     GOOGLE_CLOUD_PROJECT  = var.project_id
     GOOGLE_CLOUD_LOCATION = var.region
+    # Route google-genai (the ADK agent's Gemini calls) to Vertex in-tenancy, not the
+    # public Gemini Developer API. The brain's synthesiser sets vertexai=True in code,
+    # but the ADK agent relies on this env, so without it the agent gets no model.
+    GOOGLE_GENAI_USE_VERTEXAI = "true"
   }
 
   # The brain loads its policy from the bucket, so `brain grant` (which updates this

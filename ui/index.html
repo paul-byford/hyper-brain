@@ -4,13 +4,28 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hyper Brain</title>
-  <meta name="description" content="Hyper Brain: the company's memory, connected and current." />
+  <meta name="description" content="Hyper Brain: the company's shared memory." />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="preload" as="font" type="font/woff2" href="fonts/inter-tight.woff2" crossorigin />
   <link rel="preload" as="font" type="font/woff2" href="fonts/jetbrains-mono.woff2" crossorigin />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+<!-- Boot overlay: covers the app while it loads so a cold-starting service (Cloud Run
+     scales to zero) never shows a half-populated screen. Hidden once data is ready,
+     replaced by the sign-in screen if signed out, or an error+retry if it can't load. -->
+<div class="booting" id="booting">
+  <div class="booting-card">
+    <div class="glyph">HB</div>
+    <div class="booting-spin" aria-hidden="true"></div>
+    <div class="booting-msg" id="bootmsg">Loading Hyper Brain…</div>
+    <div class="booting-err" id="booterr">
+      <p id="booterrmsg"></p>
+      <button class="gobtn" id="bootretry">Try again</button>
+    </div>
+  </div>
+</div>
+
 <!-- Public landing page. Shown when the app is deployed (live mode) and the visitor
      is not signed in; hidden in local/demo mode and once authenticated. -->
 <div class="landing" id="landing" hidden>
@@ -19,7 +34,7 @@
       <div class="glyph">HB</div>
       <div>
         <h1>Hyper Brain</h1>
-        <div class="sub">The company's memory, connected and current</div>
+        <div class="sub">The Company's Shared Memory</div>
       </div>
     </div>
     <p class="landing-lead">
@@ -39,20 +54,21 @@
   </div>
 </div>
 
-<div class="app" id="approot">
+<div class="app" id="approot" hidden>
   <div class="topbar">
     <div class="brand">
       <div class="glyph">HB</div>
       <div>
         <h1>Hyper Brain</h1>
-        <div class="sub">The company's memory, connected and current</div>
+        <div class="sub">The Company's Shared Memory</div>
       </div>
     </div>
     <nav class="pagetabs" id="pagetabs" aria-label="Page">
-      <button data-page="connect" class="on">Connections</button>
-      <button data-page="explore">Explore</button>
-      <button data-page="review" id="reviewtab" hidden>Review</button>
+      <button data-page="connect" class="on">Overview</button>
       <button data-page="arch">Architecture</button>
+      <button data-page="explore">Explore</button>
+      <button data-page="agents">Agents</button>
+      <button data-page="review" id="reviewtab" hidden>Review</button>
     </nav>
     <div class="bar-right">
       <div class="hashchip"><span class="livedot"></span> index <b id="hash">52aaa08ce4ae</b> · <span id="doccount">12</span> docs</div>
@@ -207,6 +223,56 @@
   </div>
 
   <!-- ============================ ARCHITECTURE PAGE ============================ -->
+  <div class="page" id="page-agents" hidden>
+    <div class="sechead">
+      <span class="eyebrow">Agent team · Google ADK</span>
+      <h3>How the multi-agent brain answers you</h3>
+      <p>A coordinator delegates to specialist sub-agents over ADK agent transfer; each reaches the governed brain over authenticated MCP, scoped to exactly what you may see. Pick a scenario to replay a <b>simulated flow</b>, or <b>Run live</b> to watch the real agent team stream through in real time.</p>
+    </div>
+    <div class="agentctl">
+      <div class="seg" id="agentseg" role="group" aria-label="Scenario">
+        <button data-scenario="ask" class="on">Ask a question</button>
+        <button data-scenario="propose">Propose a document</button>
+      </div>
+      <button class="ghostbtn" id="agentreplay">↻ Replay</button>
+    </div>
+    <div class="agentlive" id="agentlive" hidden>
+      <span class="eyebrow">Run live</span>
+      <input id="agentquery" type="text" placeholder="Ask the real agent team a question, e.g. how do we detect fraud in real time?" />
+      <button class="gobtn" id="agentrun">Run ▸</button>
+      <p class="agentlivehint">Type a question above and hit <b>Run ▸</b> to replace the simulation with a real, streamed run of the agent team.</p>
+    </div>
+    <div class="agentstatus">
+      <span class="agentmode demo" id="agentmode">Simulated flow</span>
+      <span class="agentcap mono" id="agentcap"></span>
+    </div>
+    <div class="agentwrap" id="agentwrap"><canvas id="agentcanvas"></canvas></div>
+    <div class="agentanswer" id="agentanswer" hidden>
+      <div class="agentanswerlbl mono"><span class="spark"></span>Agent response</div>
+      <div class="agentanswerbody" id="agentanswerbody"></div>
+    </div>
+    <div class="agentlegend">
+      <span><i class="adot-gold"></i> ADK agents (coordinator + specialists)</span>
+      <span><i class="adot-slate"></i> Governed brain over MCP</span>
+      <span><i class="adot-pine"></i> In-tenancy resources</span>
+      <span>· tap an agent to read its prompt + model</span>
+    </div>
+
+    <div class="agentreg" id="agentreg">
+      <div class="agentreghead">
+        <span class="eyebrow">AI platform · model inventory &amp; prompt versioning</span>
+        <h4>Each agent's model and prompt, versioned and content-hashed</h4>
+        <p>Every agent is built from a named, semantically versioned, content-hashed prompt and a registered model. Select an agent, here or in the diagram above, to read its exact prompt and model registration. This is the manifest <code class="cmd">brain platform</code> prints.</p>
+      </div>
+      <div class="agentreggrid">
+        <div class="agentregcards" id="agentregcards"></div>
+        <div class="agentregdetail" id="agentregdetail"></div>
+      </div>
+      <div class="agentmodels" id="agentmodels"></div>
+      <div class="agentevals" id="agentevals"></div>
+    </div>
+  </div>
+
   <div class="page" id="page-review" hidden>
     <div class="sechead">
       <span class="eyebrow">Review queue</span>

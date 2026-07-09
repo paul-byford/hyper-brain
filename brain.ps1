@@ -18,6 +18,7 @@ param(
     [string]$Region = "europe-west2",
     [string]$Domains = "",
     [switch]$Wait,
+    [switch]$Live,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
 )
 
@@ -96,7 +97,9 @@ Local commands (no cloud):
   index         Build the local search index from the corpus.
   ingest        Ingest configured sources into the corpus.
   eval          Run the offline agent eval tier.
-  agent         Chat with the agent locally (adk web, offline).
+  platform      Show the AI-platform manifest (model inventory + prompt versions).
+  agent [-Live] Chat with the agent locally (adk web). -Live runs the real
+                multi-agent team vs the deployed brain (set `$env:BRAIN_TOKEN first).
   ui            Serve the Brain Explorer locally (offline).
   connect       Print the MCP config block for the deployed (or local) brain.
   status        Show what is deployed (or local state).
@@ -128,6 +131,11 @@ function Cmd-Ingest {
     & $py -m brain_app.ingest.run --sources config/sources.yaml --corpus corpus
 }
 
+function Cmd-Platform {
+    $py = Get-Python
+    & $py -m brain_app.inventory
+}
+
 function Cmd-Eval {
     $py = Get-Python
     Info "Running the offline eval tier"
@@ -136,8 +144,29 @@ function Cmd-Eval {
 
 function Cmd-Agent {
     Require-Cmd "adk" "Install the agent extra: pip install -e `".\app[agent]`""
-    Info "Starting the agent dev UI (offline). Ctrl+C to stop."
-    adk web (Join-Path $Root "app\brain_app")
+    $agentsDir = Join-Path $Root "app\agents"
+    if ($Live) {
+        # Live multi-agent team (coordinator -> researcher/curator) against the deployed
+        # brain, with Gemini on Vertex. Needs a bearer the brain accepts: copy yours from
+        # the signed-in UI (DevTools console: sessionStorage.getItem('hb_access_token'))
+        # and set $env:BRAIN_TOKEN before running.
+        if (-not $env:BRAIN_TOKEN) { Die "set `$env:BRAIN_TOKEN first (copy it from the signed-in UI: sessionStorage.getItem('hb_access_token'))" }
+        $proj = Resolve-Project
+        $brainUrl = Tf-Output "brain_url"
+        if (-not $brainUrl) { Die "no deployed brain found; run .\brain.ps1 up first" }
+        $env:BRAIN_AGENT_MODE = "live"
+        $env:BRAIN_URL = "$brainUrl/mcp"
+        $env:BRAIN_AUDIENCE = $brainUrl
+        $env:GOOGLE_GENAI_USE_VERTEXAI = "true"
+        $env:GOOGLE_CLOUD_PROJECT = $proj
+        $env:GOOGLE_CLOUD_LOCATION = $Region
+        Info "Starting the LIVE multi-agent team (Gemini on Vertex, brain over MCP). Ctrl+C to stop."
+    } else {
+        $env:BRAIN_AGENT_MODE = "offline"
+        Info "Starting the agent dev UI (offline, deterministic). Ctrl+C to stop. Use -Live for the real team."
+    }
+    Set-Location (Join-Path $Root "app")
+    adk web agents
 }
 
 function Cmd-Ui {
@@ -322,6 +351,7 @@ try {
         "index" { Cmd-Index }
         "ingest" { Cmd-Ingest }
         "eval" { Cmd-Eval }
+        "platform" { Cmd-Platform }
         "agent" { Cmd-Agent }
         "ui" { Cmd-Ui }
         "connect" { Cmd-Connect }

@@ -42,6 +42,10 @@ mcp = [
 # eval framework (tool_trajectory + ROUGE response_match) so the golden and
 # isolation evals run free in CI.
 agent = ["google-adk[eval]>=1.0"]
+# The brain's in-process live agent run (the Agents page "Run live"): google-adk
+# without the eval framework, kept lean. Imported lazily so it never loads on the
+# brain's normal MCP/REST request path.
+agentrun = ["google-adk>=1.0"]
 # The in-tenancy OAuth 2.1 Authorization Server that lets remote MCP clients
 # (Claude/ChatGPT custom connectors) register and sign in. Stateless: all OAuth
 # state is signed JWTs, so it runs on scale-to-zero Cloud Run with no datastore.
@@ -49,6 +53,12 @@ agent = ["google-adk[eval]>=1.0"]
 # verifies the upstream Google login (reused from the mcp extra at runtime).
 oauth = [
   "pyjwt[crypto]>=2.8",
+]
+# Optional: export OpenTelemetry spans to any OTLP endpoint (for example a
+# self-hosted, in-tenancy Langfuse) for LLM-native tracing. Off by default; enable
+# with BRAIN_OTEL=langfuse and the standard OTEL_EXPORTER_OTLP_* env vars.
+otlp = [
+  "opentelemetry-exporter-otlp-proto-http>=1.20",
 ]
 dev = [
   "pytest>=8.0",

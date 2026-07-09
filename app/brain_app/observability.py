@@ -53,6 +53,17 @@ def configure(exporter: str | None = None) -> bool:
         from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 
         provider.add_span_processor(SimpleSpanProcessor(CloudTraceSpanExporter()))
+    elif exporter in ("otlp", "langfuse"):
+        # Optional: export the same spans to any OpenTelemetry OTLP endpoint, e.g. a
+        # self-hosted (in-tenancy) or cloud Langfuse for LLM-native tracing, prompt
+        # and eval linkage. The endpoint/auth come from the standard OTEL_EXPORTER_OTLP_*
+        # env vars, so pointing at Langfuse is configuration, not code. Lazy import so
+        # this stays a no-op unless the [otlp] extra is installed.
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        except ImportError:
+            return False
+        provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
     else:
         return False
 

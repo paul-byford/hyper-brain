@@ -47,6 +47,7 @@ function withAlpha(hex, a) {
 
 // ---- State + data (populated after fetch) -----------------------------------
 let index = null, policy = null, config = {};
+let AGENTS = null, AGENTSEL = null; // agent/model/prompt manifest + selected agent id
 let DOMAIN_ORDER = [], domIdx = new Map(), byId = new Map(), PRINCIPALS = [];
 const state = { principal: null, allowed: new Set(), openDoc: null, openDocNode: null, query: "", mode: "explore" };
 
@@ -56,8 +57,39 @@ const domVar = (domain) => `--domain-${((domIdx.get(domain) || 0) % 6) + 1}`;
 // ============================================================================
 //  Boot
 // ============================================================================
+// ---- Boot overlay: a single loading gate so cold starts never show a half-page ----
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function setBootMessage(m) { const el = $("#bootmsg"); if (el) el.textContent = m; }
+function showBoot(m) { const b = $("#booting"); if (!b) return; b.classList.remove("error"); b.hidden = false; setBootMessage(m || "Loading…"); }
+function hideBoot() { const b = $("#booting"); if (b) b.hidden = true; }
+function revealApp() { const el = $("#approot"); if (el) el.hidden = false; }
+function bootError(msg, onRetry, label) {
+  const b = $("#booting"); if (!b) return;
+  b.hidden = false; b.classList.add("error");
+  $("#booterrmsg").textContent = msg;
+  const btn = $("#bootretry"); btn.textContent = label || "Try again";
+  btn.onclick = () => { b.classList.remove("error"); if (onRetry) onRetry(); };
+}
+
+// Retry only transient failures (network blip or a warming service's 5xx/429); real
+// errors (401/403/404) surface immediately. Backs off up to ~20s, then gives up.
+async function withRetry(fn) {
+  const MAX = 6;
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) {
+      const s = e && e.status;
+      const transient = s == null || s === 0 || s === 429 || (s >= 500 && s < 600);
+      if (!transient || i >= MAX) throw e;
+      setBootMessage("Still waking the brain service. Hang tight…");
+      await sleep(Math.min(800 * 2 ** i, 5000));
+    }
+  }
+}
+
 async function boot() {
   config = await fetch("data/config.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  AGENTS = await fetch("data/agents.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
   LIVE = !!(config.api_url && config.auth_url);
 
   if (LIVE) {
@@ -67,21 +99,47 @@ async function boot() {
     } catch (e) {
       $("#landinghint").textContent = String(e.message || e);
     }
-    if (!token()) { showLanding(); return; }
-    try {
-      await bootLive();
-    } catch (e) {
-      if (e && e.status === 401) { signOut(); showLanding(); return; }
-      $("#approot").innerHTML =
-        `<div class="panel" style="margin:20px;padding:20px"><h2>Could not load</h2>
-         <p style="color:var(--muted)">${esc(String(e.message || e))}</p></div>`;
-    }
+    if (!token()) { hideBoot(); showLanding(); return; }
+    await loadLive();
     return;
   }
   await bootDemo();
 }
 
+// Fetch the essential per-user data (with cold-start retries) before revealing the
+// app, so the user never sees empty boxes. 401 anywhere means the session is gone.
+async function loadLive() {
+  showBoot("Waking the brain service. This can take a few seconds if it has been idle…");
+  let me, docs;
+  try {
+    me = await withRetry(() => API.me());
+    setBootMessage("Loading your workspace…");
+    docs = await withRetry(() => API.documents());
+  } catch (e) {
+    if (e && e.status === 401) { signOut(); hideBoot(); showLanding(); return; }
+    bootError("We can't reach the brain service right now. It may still be waking up, or the connection dropped.", loadLive);
+    return;
+  }
+  try {
+    revealApp();
+    await bootLive(me, docs);
+    hideBoot();
+  } catch (e) {
+    if (e && e.status === 401) { signOut(); hideBoot(); showLanding(); return; }
+    bootError("Something went wrong loading your workspace.", loadLive);
+  }
+}
+
+// The session expired while the app was open (a poll came back 401): tell the user
+// plainly rather than leaving stale content on screen with no sign they are signed out.
+function sessionExpired() {
+  if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+  signOut();
+  bootError("Your session has expired. Please sign in again.", () => beginLogin(config.auth_url), "Sign in again");
+}
+
 function showLanding() {
+  hideBoot();
   $("#landing").hidden = false;
   $("#approot").hidden = true;
   $("#signin").addEventListener("click", () => beginLogin(config.auth_url));
@@ -95,15 +153,12 @@ async function bootDemo() {
       fetch("data/policy.json").then((r) => r.json()),
     ]);
     index = idx; policy = pol;
-  } catch (e) {
-    $("#approot").innerHTML =
-      `<div class="panel" style="margin:20px;padding:20px"><h2>No data</h2>
-       <p style="color:var(--muted)">Run <code class="cmd">./brain ui</code> (or
-       <code class="cmd">python scripts/export_ui_data.py</code>) to export the index, then serve this
-       folder over http. (${esc(String(e))})</p></div>`;
+  } catch {
+    bootError("No exported data found. Run ./brain ui (or python scripts/export_ui_data.py) to export the index, then reload.", bootDemo);
     return;
   }
 
+  revealApp();
   DOMAIN_ORDER = [...policy.domains].sort();
   domIdx = new Map(DOMAIN_ORDER.map((d, i) => [d, i]));
   byId = new Map(index.documents.map((d) => [d.doc_id, d]));
@@ -124,12 +179,13 @@ async function bootDemo() {
   renderConnections();
   loop();
   setPage("connect"); // Connections is the default page
+  hideBoot();
 }
 
-// Signed-in live mode: real per-user data from the brain's REST facade.
-async function bootLive() {
-  ME = await API.me();
-  const docs = await API.documents();
+// Signed-in live mode: render from the per-user data loadLive() already fetched
+// (with cold-start retries), so this runs only once the data is in hand.
+async function bootLive(me, docs) {
+  ME = me;
   // Shape the REST payload like the static index so the renderers are reused.
   const adjacency = {};
   for (const d of docs) adjacency[d.doc_id] = d.links || [];
@@ -154,6 +210,7 @@ async function bootLive() {
   if (idpill) idpill.style.display = "none";
   const canReview = (ME.writable || []).length > 0;
   $("#reviewtab").hidden = !canReview;
+  $("#agentlive").hidden = false; // signed in: the Agents page can run the real team
 
   buildGraph();
   fillMcp();
@@ -171,7 +228,7 @@ async function bootLive() {
   loop();
   initLiveChannel(); // cross-tab pending-note updates (same browser)
   startLivePoll(); // keep this tab current (picks up content added anywhere)
-  setPage("explore"); // Go straight into the tool.
+  setPage("connect"); // Open on the Overview tab.
 }
 
 // ---- Live-mode search (REST-backed) -----------------------------------------
@@ -386,6 +443,10 @@ function wireLive() {
   });
   document.querySelectorAll("[data-close-note]").forEach((el) => el.addEventListener("click", () => { $("#notemodal").hidden = true; }));
 
+  // Agents page: run the real ADK team live.
+  $("#agentrun").addEventListener("click", runLiveAgent);
+  $("#agentquery").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runLiveAgent(); } });
+
   $("#uploadbtn").addEventListener("click", () => $("#fileinput").click());
   $("#fileinput").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0]; if (!file) return;
@@ -474,7 +535,8 @@ function startLivePoll() {
   livePollTimer = setInterval(async () => {
     if (document.hidden) return;
     let docs;
-    try { docs = await API.documents(); } catch { return; }
+    try { docs = await API.documents(); }
+    catch (e) { if (e && e.status === 401) sessionExpired(); return; }
     if (docs.length === index.documents.length) return; // steady: nothing new
     const hadPending = PENDING_NOTES.length;
     applyLiveDocs(docs);
@@ -1178,16 +1240,358 @@ function flowLoop() {
   flowStep(); flowDraw(); requestAnimationFrame(flowLoop);
 }
 
+// ---- Agents page: animated, interactive multi-agent flow (ADK showcase) -----
+const agentCanvas = $("#agentcanvas"), ax = agentCanvas.getContext("2d");
+let aW = 0, aH = 0, adpr = 1, agentsActive = false, agentsRunning = false;
+let aScenario = "ask", aStep = 0, aT = 0;
+// Live mode: real events arrive over SSE and queue up; each animates as it fires, so
+// you watch the actual run unfold. Demo mode loops the scripted scenarios.
+let aMode = "demo";
+let aQueue = [], aCur = null, aStreamDone = false, aLiveAnswer = "", aAnswerShown = false;
+let aStepNo = 0; // count of live steps shown so far (for numbering the caption)
+let aFiring = false; // submitted, awaiting the first real event: pulse the You box
+
+// Positions are normalised (0..1). Left: you. The coordinator is a hub that fans out
+// to its two specialists (researcher up, curator down), so a delegation edge never
+// crosses the other specialist. Then the governed brain (MCP), then the resources.
+const A_NODES = {
+  you:     { x: 0.115, y: 0.50, label: "You", sub: "the caller", kind: "out" },
+  coord:   { x: 0.30,  y: 0.50, label: "Coordinator", sub: "routes the request", kind: "agent" },
+  research:{ x: 0.45,  y: 0.24, label: "Researcher", sub: "read tools", kind: "agent" },
+  curate:  { x: 0.45,  y: 0.76, label: "Curator", sub: "write tools", kind: "agent" },
+  brain:   { x: 0.645, y: 0.50, label: "Brain · MCP", sub: "enforces the domain ACL", kind: "brain" },
+  gemini:  { x: 0.87,  y: 0.22, label: "Gemini · Vertex", sub: "in-tenancy synthesis", kind: "res" },
+  corpus:  { x: 0.87,  y: 0.50, label: "Corpus + index", sub: "hybrid retrieval", kind: "res" },
+  review:  { x: 0.87,  y: 0.80, label: "Review queue", sub: "human approval", kind: "res" },
+};
+
+const A_SCENARIOS = {
+  ask: {
+    steps: [
+      { a: "you", b: "coord", cap: "You ask: “how do we detect fraud in real time?”" },
+      { a: "coord", b: "research", cap: "Coordinator delegates → transfer_to_agent(researcher)" },
+      { a: "research", b: "brain", cap: "Researcher calls search over authenticated MCP" },
+      { a: "brain", b: "corpus", cap: "Brain retrieves your domain-scoped chunks (semantic + keyword)" },
+      { a: "brain", b: "gemini", cap: "Gemini composes a grounded, cited answer, inside your tenancy" },
+      { a: "brain", b: "research", cap: "The cited answer returns to the researcher" },
+      { a: "research", b: "you", cap: "Researcher answers you, with citations and honest gaps" },
+    ],
+  },
+  propose: {
+    steps: [
+      { a: "you", b: "coord", cap: "You ask: “draft a note on feature flags for finserv”" },
+      { a: "coord", b: "curate", cap: "Coordinator delegates → transfer_to_agent(curator)" },
+      { a: "curate", b: "brain", cap: "Curator grounds the draft: search + get_document" },
+      { a: "brain", b: "corpus", cap: "Brain retrieves the relevant material" },
+      { a: "curate", b: "brain", cap: "Curator calls propose_document" },
+      { a: "brain", b: "review", cap: "Proposal is staged for human review, never written live" },
+      { a: "curate", b: "you", cap: "Curator: “proposed into finserv, awaiting review”" },
+    ],
+  },
+};
+
+// The union of every scenario edge, drawn faintly as the always-visible agent map.
+const A_ALL_EDGES = (() => {
+  const seen = new Set(), out = [];
+  for (const name of Object.keys(A_SCENARIOS))
+    for (const s of A_SCENARIOS[name].steps) {
+      const k = s.a + ">" + s.b;
+      if (!seen.has(k)) { seen.add(k); out.push([s.a, s.b]); }
+    }
+  return out;
+})();
+
+function aColor(kind) {
+  return { out: cssVar("--faint"), agent: cssVar("--signal"),
+    brain: cssVar("--domain-2"), res: cssVar("--domain-3") }[kind] || cssVar("--muted");
+}
+function agentsResize() {
+  const r = agentCanvas.getBoundingClientRect(); if (!r.width) return;
+  adpr = Math.min(window.devicePixelRatio || 1, 2);
+  aW = r.width; aH = r.height;
+  agentCanvas.width = aW * adpr; agentCanvas.height = aH * adpr;
+  ax.setTransform(adpr, 0, 0, adpr, 0, 0);
+}
+const aPos = (n) => ({ x: n.x * aW, y: n.y * aH });
+function agentsStepTick() {
+  if (aMode === "live") {
+    if (!aCur) {
+      if (aQueue.length) { aCur = aQueue.shift(); aFiring = false; aStepNo++; aT = 0; }
+      else if (aStreamDone && !aAnswerShown) { aFiring = false; showLiveAnswer(); } // failed before any event
+      return;
+    }
+    aT += 0.02; // brisk, so queued real events don't lag far behind the run
+    if (aT < 1) return;
+    if (aQueue.length) { aCur = aQueue.shift(); aStepNo++; aT = 0; }
+    else { aT = 1; if (aStreamDone && !aAnswerShown) showLiveAnswer(); } // hold, awaiting the next event
+    return;
+  }
+  aT += 0.012; // demo: loop the scripted scenario
+  if (aT >= 1) { aT = 0; aStep = (aStep + 1) % A_SCENARIOS[aScenario].steps.length; }
+}
+const aBoxW = () => Math.max(120, Math.min(170, aW * 0.17));
+const A_BOXH = 44;
+// Where the ray leaving box centre c in unit direction (dx,dy) meets the box edge.
+function boxExit(c, dx, dy) {
+  const hw = aBoxW() / 2, hh = A_BOXH / 2;
+  const tx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+  const ty = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: c.x + dx * t, y: c.y + dy * t };
+}
+// The connecting segment, trimmed to both boxes' borders so lines never cross text.
+function aSeg(a, b) {
+  const pa = aPos(A_NODES[a]), pb = aPos(A_NODES[b]);
+  let dx = pb.x - pa.x, dy = pb.y - pa.y; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+  return { p1: boxExit(pa, dx, dy), p2: boxExit(pb, -dx, -dy) };
+}
+function aEdge(a, b, active) {
+  const { p1, p2 } = aSeg(a, b);
+  ax.beginPath(); ax.moveTo(p1.x, p1.y); ax.lineTo(p2.x, p2.y);
+  ax.strokeStyle = active ? withAlpha(cssVar("--signal"), 0.9) : withAlpha(cssVar("--pulse"), 0.85);
+  ax.lineWidth = active ? 2 : 1; ax.stroke();
+}
+function aParticle(a, b, t) {
+  const { p1, p2 } = aSeg(a, b);
+  for (let k = 0; k < 6; k++) {
+    const tt = t - k * 0.045; if (tt < 0 || tt > 1) continue;
+    const x = p1.x + (p2.x - p1.x) * tt, y = p1.y + (p2.y - p1.y) * tt, s = 7 - k;
+    ax.fillStyle = withAlpha(cssVar("--signal"), 0.95 - k * 0.15);
+    ax.fillRect(x - s / 2, y - s / 2, s, s);
+  }
+}
+function aNode(id, active) {
+  const n = A_NODES[id], p = aPos(n), col = aColor(n.kind);
+  const w = aBoxW(), h = A_BOXH, x0 = p.x - w / 2, y0 = p.y - h / 2;
+  // Opaque base first so an edge never shows through, then a tint if active.
+  ax.fillStyle = cssVar("--panel"); ax.fillRect(x0, y0, w, h);
+  if (active) { ax.fillStyle = withAlpha(col, 0.14); ax.fillRect(x0, y0, w, h); }
+  ax.strokeStyle = active ? col : cssVar("--hair");
+  ax.lineWidth = active ? 2 : 1;
+  ax.strokeRect(x0, y0, w, h);
+  ax.fillStyle = col; ax.fillRect(x0 + 10, p.y - 7, 7, 7);
+  ax.textAlign = "left"; ax.textBaseline = "alphabetic";
+  ax.fillStyle = cssVar("--ink"); ax.font = "700 12.5px " + fam();
+  ax.fillText(n.label, x0 + 25, p.y - 2);
+  ax.fillStyle = cssVar("--muted"); ax.font = "10px " + fam();
+  ax.fillText(n.sub, x0 + 25, p.y + 12);
+}
+// The mode badge and the diagram's live ring: unmistakable live-vs-simulated cue.
+let aModeLabel = "";
+function setAgentModeUI() {
+  let label, cls;
+  if (aMode === "live") { label = aStreamDone ? "Live run · done" : "Live run"; cls = aStreamDone ? "live done" : "live running"; }
+  else { label = "Simulated flow"; cls = "demo"; }
+  if (label === aModeLabel) return;
+  aModeLabel = label;
+  const pill = $("#agentmode"); if (pill) { pill.textContent = label; pill.className = "agentmode " + cls; }
+  const wrap = $("#agentwrap"); if (wrap) wrap.classList.toggle("live", aMode === "live");
+}
+// A pulsing gold ring on a node, e.g. the You box "firing up" the instant you submit,
+// before the first real event arrives (there is a short lag while the run starts).
+function aPulseNode(id) {
+  const p = aPos(A_NODES[id]), w = aBoxW(), h = A_BOXH;
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 210);
+  ax.strokeStyle = withAlpha(cssVar("--signal"), 0.35 + 0.55 * pulse);
+  ax.lineWidth = 1.5 + 1.8 * pulse;
+  ax.strokeRect(p.x - w / 2, p.y - h / 2, w, h);
+}
+function agentsDraw() {
+  ax.clearRect(0, 0, aW, aH);
+  for (const [a, b] of A_ALL_EDGES) aEdge(a, b, false); // faint always-visible map
+  const cur = aMode === "live" ? aCur : A_SCENARIOS[aScenario].steps[aStep];
+  const firing = aMode === "live" && aFiring && !cur;
+  if (cur) { aEdge(cur.a, cur.b, true); aParticle(cur.a, cur.b, aT); }
+  for (const id of Object.keys(A_NODES)) {
+    aNode(id, (!!cur && (id === cur.a || id === cur.b)) || (firing && id === "you"));
+  }
+  if (firing) aPulseNode("you"); // animate immediately on submit
+  setAgentModeUI();
+  const cap = $("#agentcap");
+  if (!cap) return;
+  if (aMode === "live") {
+    if (cur) cap.textContent = `${aStepNo} · ${cur.cap}`;
+    else if (firing) cap.textContent = "Firing up the agent team…";
+    else if (aStreamDone) cap.textContent = aLiveAnswer || "Run ended.";
+    else cap.textContent = "waiting for the first event…";
+  } else {
+    const steps = A_SCENARIOS[aScenario].steps;
+    cap.textContent = `step ${aStep + 1}/${steps.length} · ${cur.cap}`;
+  }
+}
+function agentsLoop() {
+  if (!agentsActive) { agentsRunning = false; return; }
+  agentsStepTick(); agentsDraw(); requestAnimationFrame(agentsLoop);
+}
+function showLiveAnswer() {
+  aAnswerShown = true;
+  const body = $("#agentanswerbody"); if (body) body.textContent = aLiveAnswer;
+  const el = $("#agentanswer"); if (el) el.hidden = false;
+}
+function resetLiveAgent() {
+  aMode = "demo"; aQueue = []; aCur = null; aStreamDone = false; aLiveAnswer = ""; aAnswerShown = false;
+  aStepNo = 0; aFiring = false;
+  const el = $("#agentanswer"); if (el) el.hidden = true;
+  const body = $("#agentanswerbody"); if (body) body.textContent = "";
+}
+function setScenario(name) {
+  if (!A_SCENARIOS[name]) return;
+  resetLiveAgent();
+  aScenario = name; aStep = 0; aT = 0;
+  for (const b of $("#agentseg").querySelectorAll("button")) b.classList.toggle("on", b.dataset.scenario === name);
+  agentsResize(); agentsDraw();
+}
+// One SSE frame from the live run: a step to animate, the final answer, or an error.
+function handleAgentEvent(msg) {
+  if (msg.step && msg.step.edge) aQueue.push({ a: msg.step.edge[0], b: msg.step.edge[1], cap: msg.step.caption || "" });
+  if (msg.error) { aStreamDone = true; aLiveAnswer = "Error: " + msg.error; }
+  if (msg.done) { aStreamDone = true; aLiveAnswer = msg.answer || "(no answer returned)"; }
+}
+// Phase 3: stream the real ADK run over SSE and light each edge as its event fires.
+async function runLiveAgent() {
+  const q = $("#agentquery").value.trim(); if (!q || !LIVE) return;
+  resetLiveAgent();
+  aMode = "live"; aStep = 0; aT = 0; aFiring = true; aStepNo = 0; // pulse the You box at once
+  $("#agentrun").disabled = true;
+  const cap = $("#agentcap"); if (cap) cap.textContent = "Firing up the agent team…";
+  try {
+    const resp = await fetch(`${config.api_url}/api/agent/stream`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
+      body: JSON.stringify({ query: q }),
+    });
+    if (!resp.ok || !resp.body) throw new Error(`agent stream failed (${resp.status})`);
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, i); buf = buf.slice(i + 2);
+        const line = frame.split("\n").find((l) => l.startsWith("data:"));
+        if (line) { try { handleAgentEvent(JSON.parse(line.slice(5).trim())); } catch { /* skip */ } }
+      }
+    }
+    aStreamDone = true;
+  } catch (e) {
+    aStreamDone = true; aFiring = false; aLiveAnswer = "Run failed: " + String(e.message || e);
+  } finally {
+    $("#agentrun").disabled = false;
+  }
+}
+
+// ---- Agent registry: model inventory + versioned prompts -------------------
+const aFind = (id) => (AGENTS ? AGENTS.agents.find((a) => a.id === id) : null);
+function renderAgentReg() {
+  const cards = $("#agentregcards");
+  if (!AGENTS || !cards) return;
+  cards.innerHTML = AGENTS.agents.map((a) => {
+    const p = a.prompt;
+    return `<button class="agentcard" data-agent="${a.id}">
+      <div class="agentcardtop"><span class="agentcardname">${esc(a.name)}</span>
+        <span class="agentcardmodel mono">${esc(a.model)}</span></div>
+      <div class="agentcardrole">${esc(a.role)}</div>
+      <div class="agentcardver mono">${esc(p.name)} · v${esc(p.version)} · <span class="sha">${esc(p.sha)}</span></div>
+    </button>`;
+  }).join("");
+  cards.querySelectorAll(".agentcard").forEach((b) =>
+    b.addEventListener("click", () => selectAgent(b.dataset.agent)));
+  renderAgentModels();
+  renderAgentEvals();
+  selectAgent(AGENTSEL && aFind(AGENTSEL) ? AGENTSEL : AGENTS.agents[0].id);
+}
+function renderAgentEvals() {
+  const el = $("#agentevals"), ev = AGENTS && AGENTS.evals;
+  if (!el || !ev) return;
+  const metrics = (ev.metrics || []).map((m) => `<div class="evalmetric">
+    <span class="evalmetricname mono">${esc(m.metric)}</span>
+    <span class="evalthresh mono">≥ ${esc(String(m.threshold))}</span>
+    <span class="evalabout">${esc(m.about)}</span></div>`).join("");
+  const suites = (ev.suites || []).map((s) => `<div class="evalsuite${s.boundary ? " boundary" : ""}">
+    <div class="evalsuitetop">
+      <span class="evalsuitename">${esc(s.name)}</span>
+      ${s.boundary ? '<span class="evalbadge mono">privacy gate</span>' : ""}
+      <span class="evalcases mono">${esc(String(s.cases))} case${s.cases === 1 ? "" : "s"}</span>
+    </div>
+    <div class="evalsuiteabout">${esc(s.about)}</div>
+    <div class="evalsamples">${s.samples.map((q) => `<span class="evalq mono">${esc(q)}</span>`).join("")}</div>
+    <div class="evalasserts"><span class="evalassertk mono">asserts</span> ${esc(s.asserts)}</div>
+  </div>`).join("");
+  el.innerHTML = `
+    <div class="agentevalshead">
+      <span class="eyebrow">AI platform · agent evals</span>
+      <h4>The agent team is graded by evals on every change</h4>
+      <p>${esc(ev.tier)} Two gates every pull request must clear:</p>
+    </div>
+    <div class="evalcriteria">${metrics}</div>
+    <div class="evalsuites">${suites}</div>
+    <div class="evalpaid mono">Opt-in paid tier (LLM-judged, controlled profile, not run in the free tier): ${(ev.paid_tier || []).map(esc).join(" · ")}</div>`;
+}
+function renderAgentModels() {
+  const el = $("#agentmodels");
+  if (!el || !AGENTS) return;
+  const rows = (AGENTS.models || []).map((m) => `<tr>
+    <td class="mono">${esc(m.id || "")}</td>
+    <td>${esc(m.modality || "")}</td>
+    <td class="mono">${esc(m.region || "")}</td>
+    <td><span class="mstatus ${m.status === "approved" ? "ok" : "opt"}">${esc(m.status || "")}</span></td>
+    <td class="mpurpose">${esc(m.purpose || "")}</td></tr>`).join("");
+  el.innerHTML = `<div class="agentmodelshead mono">Model inventory · config/models.yaml</div>
+    <div class="agentmodelscroll"><table class="agentmodeltable">
+      <thead><tr><th>Model</th><th>Modality</th><th>Region</th><th>Status</th><th>Purpose</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+function selectAgent(id) {
+  const a = aFind(id);
+  if (!a) return;
+  AGENTSEL = id;
+  for (const b of document.querySelectorAll(".agentcard")) b.classList.toggle("on", b.dataset.agent === id);
+  const md = a.model_detail || {}, p = a.prompt;
+  const meta = [
+    ["prompt", `${p.name} · v${p.version} · sha ${p.sha}`],
+    ["model", `${a.model}${md.provider ? " · " + md.provider : ""}${md.region ? " · " + md.region : ""}`],
+    ["status", md.status || "registered"],
+    ["tools", a.tools.join(", ")],
+  ].map(([k, v]) => `<div class="ametarow"><span class="ametak">${esc(k)}</span><span class="ametav mono">${esc(v)}</span></div>`).join("");
+  $("#agentregdetail").innerHTML = `
+    <div class="agentdetailhead"><h5>${esc(a.name)}</h5>
+      <span class="agentdetailrole">${esc(a.role)}</span></div>
+    <div class="agentdetailmeta">${meta}</div>
+    <div class="agentdetaillabel mono">Active prompt · content-hashed ${esc(p.sha)}</div>
+    <pre class="agentprompt">${esc(p.text)}</pre>`;
+}
+// Clicking an agent box in the diagram opens that agent's registry entry.
+const A_CLICKABLE = ["coord", "research", "curate"];
+function agentAt(clientX, clientY) {
+  const r = agentCanvas.getBoundingClientRect();
+  const cx = clientX - r.left, cy = clientY - r.top, w = aBoxW(), h = A_BOXH;
+  return A_CLICKABLE.find((id) => {
+    const p = aPos(A_NODES[id]);
+    return Math.abs(cx - p.x) <= w / 2 && Math.abs(cy - p.y) <= h / 2;
+  }) || null;
+}
+
 // ---- Page switching (Connections / Explore) ---------------------------------
 let graphSized = false;
 function setPage(p) {
   $("#page-explore").hidden = p !== "explore";
   $("#page-connect").hidden = p !== "connect";
   $("#page-arch").hidden = p !== "arch";
+  $("#page-agents").hidden = p !== "agents";
   const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";
   if (p === "review") renderReview();
   for (const b of $("#pagetabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === p);
   for (const el of document.querySelectorAll(".exp-only")) el.style.display = p === "explore" ? "" : "none";
+  // Agents animation: run only while its page is visible.
+  agentsActive = p === "agents";
+  if (agentsActive) {
+    requestAnimationFrame(() => {
+      agentsResize();
+      if (!agentsRunning) { agentsRunning = true; agentsLoop(); }
+    });
+  }
   if (p === "connect") {
     flowActive = true;
     requestAnimationFrame(() => {
@@ -1257,6 +1661,22 @@ function wireStatic() {
   // pages
   $("#pagetabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setPage(b.dataset.page); });
 
+  // agents page: scenario switch + replay
+  $("#agentseg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setScenario(b.dataset.scenario); });
+  $("#agentreplay").addEventListener("click", () => { aStep = 0; aT = 0; });
+
+  // agents page: model/prompt registry, and click an agent box to open its entry
+  renderAgentReg();
+  agentCanvas.addEventListener("click", (e) => {
+    const id = agentAt(e.clientX, e.clientY);
+    if (!id) return;
+    selectAgent(id);
+    $("#agentreg").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  agentCanvas.addEventListener("mousemove", (e) => {
+    agentCanvas.style.cursor = agentAt(e.clientX, e.clientY) ? "pointer" : "default";
+  });
+
   // modal
   mcpmodal.addEventListener("click", (e) => {
     if (e.target.matches("[data-close]") || e.target.classList.contains("modal-backdrop")) closeMcp();
@@ -1283,7 +1703,7 @@ function wireStatic() {
     else if (e.key === "Escape" && state.mode === "read") setMode("explore");
   });
 
-  window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); });
+  window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); if (agentsActive) agentsResize(); });
 }
 
 boot();

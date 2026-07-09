@@ -1,0 +1,29 @@
+# AI model inventory: the models this brain runs, as a governable registry. Each
+# entry pins a version and records its purpose, provider, region, owner and approval
+# status, so model usage is reviewable and auditable. This is the "model inventory"
+# of the AI-platform layer; the versioned prompt registry (brain_app/prompts.py) is
+# its companion. `brain platform` prints both.
+version: 1
+models:
+  - id: gemini-2.5-flash
+    purpose: Grounded answer synthesis and the ADK agent team.
+    provider: Google Vertex AI
+    region: europe-west2
+    modality: text-generation
+    owner: platform-team
+    status: approved
+  - id: text-embedding-005
+    purpose: Corpus and query embeddings for hybrid retrieval.
+    provider: Google Vertex AI
+    region: europe-west2
+    modality: text-embedding
+    dimension: 768
+    owner: platform-team
+    status: approved
+  - id: documentai-ocr
+    purpose: In-tenancy OCR for scanned/image PDFs on upload (optional; pypdf handles text PDFs).
+    provider: Google Vertex AI Document AI
+    region: eu
+    modality: document-parsing
+    owner: platform-team
+    status: optional

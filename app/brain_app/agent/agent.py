@@ -1,18 +1,24 @@
 """The hyper-brain ADK agent.
 
-An ADK ``LlmAgent`` whose tools are the brain's tools, in two interchangeable
-wirings behind one builder (ARCHITECTURE.md section 8):
+In **live** mode this is a multi-agent team (ARCHITECTURE.md section 8): a
+``coordinator`` ``LlmAgent`` that delegates to two sub-agents over ADK's agent
+transfer:
 
-- **live** (production/demo): a Gemini model on Vertex, tools attached over MCP
-  streamable HTTP with the caller's OIDC token as a bearer, ``tool_filter`` limited
-  to the brain's tools. The brain enforces the domain ACL, so the agent is
-  automatically scoped to what the caller may see.
-- **offline** (default; CI and evals): a deterministic ``FakeBrainModel`` and the
-  same tool surface bound in-process, so the whole agent runs free with no cloud.
+- **researcher** - answers questions using the brain's read tools (search, answer,
+  get_document, list_domains);
+- **curator** - drafts and *proposes* new documents (propose_document), grounded in
+  existing material, landing them in the human review queue, never live.
 
-``root_agent`` is what ``adk web`` and the eval harness discover. It is offline by
-default so the golden and isolation evals are hermetic; set ``BRAIN_AGENT_MODE=live``
-(with a brain URL, a bearer token and Vertex creds) for the real thing.
+Every tool is the brain's own, attached over MCP streamable HTTP with the caller's
+OIDC token as a bearer and ``tool_filter`` limited to each role's tools; the brain
+enforces the domain ACL, so the whole team is automatically scoped to what the
+caller may see (and write).
+
+In **offline** mode (default; CI and the hermetic eval tier) it is the single
+deterministic researcher, backed by ``FakeBrainModel`` and the in-process tools, so
+the golden and isolation evals run free with no cloud. ``root_agent`` is what
+``adk web`` and the eval harness discover; set ``BRAIN_AGENT_MODE=live`` for the
+real multi-agent team.
 """
 
 from __future__ import annotations
@@ -21,19 +27,13 @@ import os
 
 from google.adk.agents import LlmAgent
 
+from ..prompts import prompt
 from . import tools
 
-# The brain's tool names, used to constrain the live MCP toolset to exactly these.
-BRAIN_TOOLS = ["search", "answer", "get_document", "list_domains", "propose_document"]
-
-INSTRUCTION = (
-    "You are the hyper-brain assistant. Answer questions using ONLY the brain's "
-    "tools (search, answer, get_document). Always call a tool before answering; "
-    "never answer from your own memory. You can only see the caller's permitted "
-    "domains, so if the tools return nothing relevant, say so honestly rather than "
-    "guessing, and never claim knowledge the tools did not return. Cite the "
-    "documents you used."
-)
+# The brain tool names each role is limited to (the live MCP toolset is filtered to
+# exactly these; the brain still enforces read/write access behind them).
+RESEARCH_TOOLS = ["search", "answer", "get_document", "list_domains"]
+CURATE_TOOLS = ["search", "get_document", "propose_document"]
 
 
 def _brain_token(audience: str) -> str:
@@ -52,7 +52,7 @@ def _brain_token(audience: str) -> str:
     return id_token.fetch_id_token(Request(), audience)
 
 
-def _live_toolset():
+def _live_toolset(tool_filter: list[str]):
     from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
     from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 
@@ -64,31 +64,50 @@ def _live_toolset():
             url=url,
             headers={"Authorization": f"Bearer {_brain_token(audience)}"},
         ),
-        # Restrict the agent to exactly the brain's tools, nothing else.
-        tool_filter=BRAIN_TOOLS,
+        tool_filter=tool_filter,
+    )
+
+
+def _live_team() -> LlmAgent:
+    model = os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
+    researcher = LlmAgent(
+        name="researcher",
+        model=model,
+        instruction=prompt("researcher"),
+        tools=[_live_toolset(RESEARCH_TOOLS)],
+    )
+    curator = LlmAgent(
+        name="curator",
+        model=model,
+        instruction=prompt("curator"),
+        tools=[_live_toolset(CURATE_TOOLS)],
+    )
+    return LlmAgent(
+        name="brain_agent",
+        model=model,
+        instruction=prompt("coordinator"),
+        sub_agents=[researcher, curator],
+    )
+
+
+def _offline_researcher() -> LlmAgent:
+    from .fake_model import FakeBrainModel
+
+    return LlmAgent(
+        name="brain_agent",
+        model=FakeBrainModel(),
+        instruction=prompt("researcher"),
+        tools=[tools.search, tools.answer, tools.get_document, tools.list_domains],
     )
 
 
 def build_brain_agent(mode: str | None = None) -> LlmAgent:
-    """Build the brain agent in the given mode (defaults to ``BRAIN_AGENT_MODE`` or offline)."""
+    """Build the brain agent for the given mode (defaults to ``BRAIN_AGENT_MODE`` or offline)."""
     mode = mode or os.environ.get("BRAIN_AGENT_MODE", "offline")
     if mode == "live":
-        model = os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
-        return LlmAgent(
-            name="brain_agent",
-            model=model,
-            instruction=INSTRUCTION,
-            tools=[_live_toolset()],
-        )
+        return _live_team()
     if mode == "offline":
-        from .fake_model import FakeBrainModel
-
-        return LlmAgent(
-            name="brain_agent",
-            model=FakeBrainModel(),
-            instruction=INSTRUCTION,
-            tools=[tools.search, tools.answer, tools.get_document, tools.list_domains],
-        )
+        return _offline_researcher()
     raise ValueError(f"unknown agent mode {mode!r} (expected 'offline' or 'live')")
 
 

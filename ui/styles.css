@@ -95,6 +95,31 @@
      landing gate sets on the app while signed out. */
   .app[hidden] { display: none; }
 
+  /* ---- Boot overlay (cold-start / loading gate) ---- */
+  .booting {
+    position: fixed; inset: 0; z-index: 200; display: flex; align-items: center;
+    justify-content: center; background: var(--ground); padding: 24px;
+  }
+  .booting[hidden] { display: none; }
+  .booting-card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; max-width: 360px; }
+  /* Match the main brand logo: dark tile, gold hairline border, gold monogram. */
+  .booting .glyph {
+    width: 44px; height: 44px; flex: none; display: grid; place-items: center;
+    background: #14130c; border: 1px solid var(--signal); color: var(--signal);
+    font-weight: 800; font-size: 16px; letter-spacing: -.01em;
+  }
+  .booting-spin {
+    width: 24px; height: 24px; border: 2px solid var(--hair);
+    border-top-color: var(--signal); border-radius: 50%; animation: bootspin .8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { .booting-spin { animation: none; } }
+  @keyframes bootspin { to { transform: rotate(360deg); } }
+  .booting-msg { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .booting-err { display: none; flex-direction: column; align-items: center; gap: 14px; }
+  .booting-err p { color: var(--ink); font-size: 13.5px; line-height: 1.55; margin: 0; }
+  .booting.error .booting-spin, .booting.error .booting-msg { display: none; }
+  .booting.error .booting-err { display: flex; }
+
   /* ---- Top bar ---- */
   .topbar {
     display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap;
@@ -554,3 +579,133 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .reviewcard .rc-err { color: #b46; font-size: 12px; }
 
 .answerhint { color: var(--muted); font-size: 11px; letter-spacing: .02em; padding: 8px 2px 10px; }
+
+/* ---- Agents page: animated multi-agent flow (ADK showcase) ---- */
+#page-agents { display: flex; flex-direction: column; gap: 14px; }
+#page-agents[hidden] { display: none; }
+.agentctl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.agentwrap {
+  border: 1px solid var(--hair); box-shadow: var(--shadow);
+  height: clamp(320px, 46vh, 470px);
+  background: radial-gradient(760px 320px at 32% -10%, color-mix(in srgb, var(--signal) 7%, var(--panel)), var(--panel));
+  transition: border-color .25s, box-shadow .25s;
+}
+/* A live run rings the diagram gold, so it never reads as the scripted demo. */
+.agentwrap.live {
+  border-color: color-mix(in srgb, var(--signal) 55%, var(--hair));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--signal) 30%, transparent), var(--shadow);
+}
+#agentcanvas { width: 100%; height: 100%; display: block; }
+.agentstatus { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.agentmode {
+  flex: none; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--hair);
+}
+.agentmode::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.agentmode.demo { color: var(--muted); background: color-mix(in srgb, var(--muted) 9%, transparent); }
+.agentmode.live {
+  color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, var(--hair));
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+}
+.agentmode.running::before { animation: agentpulse 1.1s ease-in-out infinite; }
+@keyframes agentpulse { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .agentmode.running::before { animation: none; } }
+.agentcap {
+  flex: 1 1 240px; font-size: 12.5px; color: var(--ink); min-height: 20px; line-height: 1.5;
+  border-left: 2px solid var(--hair); padding: 3px 0 3px 11px;
+}
+.agentlegend { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.agentlegend span { display: inline-flex; align-items: center; gap: 6px; }
+.agentlegend i { width: 9px; height: 9px; display: inline-block; }
+
+/* ---- Agents page: live run controls ---- */
+.agentlive { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.agentlive[hidden] { display: none; }
+.agentlive .eyebrow { flex: none; }
+.agentlive input {
+  flex: 1 1 320px; min-width: 200px; background: var(--panel-2); border: 1px solid var(--hair);
+  color: var(--ink); font-family: var(--mono); font-size: 12.5px; padding: 8px 11px;
+}
+.agentanswer {
+  border: 1px solid var(--hair); background: var(--panel); box-shadow: var(--shadow);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.agentanswer[hidden] { display: none; }
+.agentanswerlbl { display: flex; align-items: center; gap: 7px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.agentanswerbody { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
+.agentlivehint { flex-basis: 100%; margin: 2px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.agentlivehint b { color: var(--ink); }
+
+/* ---- Agents page: model inventory & prompt versioning registry ---- */
+.agentreg { border-top: 1px solid var(--hair); padding-top: 16px; display: flex; flex-direction: column; gap: 14px; }
+.agentreghead .eyebrow { display: block; }
+.agentreghead h4 { margin: 6px 0 4px; font-size: 16px; letter-spacing: -.01em; }
+.agentreghead p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; max-width: 68ch; }
+.agentreggrid { display: grid; grid-template-columns: minmax(230px, 300px) 1fr; gap: 14px; align-items: start; }
+.agentregcards { display: flex; flex-direction: column; gap: 8px; }
+.agentcard {
+  text-align: left; cursor: pointer; background: var(--panel); border: 1px solid var(--hair);
+  box-shadow: var(--shadow); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
+  color: var(--ink); transition: border-color .15s, background .15s;
+}
+.agentcard:hover { border-color: color-mix(in srgb, var(--signal) 40%, var(--hair)); }
+.agentcard.on { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 8%, var(--panel)); }
+.agentcardtop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.agentcardname { font-weight: 700; font-size: 13.5px; }
+.agentcardmodel { font-size: 10.5px; color: var(--muted); }
+.agentcardrole { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.agentcardver { font-size: 10.5px; color: var(--muted); }
+.agentcardver .sha { color: var(--signal); }
+.agentregdetail {
+  border: 1px solid var(--hair); box-shadow: var(--shadow); background: var(--panel);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+}
+.agentdetailhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.agentdetailhead h5 { margin: 0; font-size: 15px; }
+.agentdetailrole { font-size: 12px; color: var(--muted); }
+.agentdetailmeta { display: flex; flex-direction: column; gap: 3px; }
+.ametarow { display: flex; gap: 10px; font-size: 12px; }
+.ametak { flex: none; width: 52px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 10px; padding-top: 2px; }
+.ametav { color: var(--ink); word-break: break-word; }
+.agentdetaillabel { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; padding-top: 2px; }
+.agentprompt {
+  margin: 0; background: var(--panel-2); border: 1px solid var(--hair); padding: 12px 13px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto;
+}
+.agentmodelshead { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 7px; }
+.agentmodelscroll { overflow-x: auto; }
+.agentmodeltable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.agentmodeltable th { text-align: left; font-weight: 600; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; padding: 0 12px 6px 0; border-bottom: 1px solid var(--hair); }
+.agentmodeltable td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hair); vertical-align: top; }
+.agentmodeltable .mpurpose { color: var(--muted); }
+.mstatus { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--hair); white-space: nowrap; }
+.mstatus.ok { color: var(--domain-3); border-color: color-mix(in srgb, var(--domain-3) 45%, var(--hair)); }
+.mstatus.opt { color: var(--muted); }
+@media (max-width: 720px) { .agentreggrid { grid-template-columns: 1fr; } }
+
+/* ---- Agents page: eval tier ---- */
+.agentevals { border-top: 1px solid var(--hair); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.agentevalshead .eyebrow { display: block; }
+.agentevalshead h4 { margin: 6px 0 4px; font-size: 16px; letter-spacing: -.01em; }
+.agentevalshead p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; max-width: 68ch; }
+.evalcriteria { display: flex; flex-wrap: wrap; gap: 8px; }
+.evalmetric { display: flex; align-items: center; gap: 9px; border: 1px solid var(--hair); background: var(--panel); box-shadow: var(--shadow); padding: 7px 11px; flex: 1 1 320px; }
+.evalmetricname { font-size: 12px; color: var(--ink); }
+.evalthresh { font-size: 11px; color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 45%, var(--hair)); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.evalabout { font-size: 11.5px; color: var(--muted); }
+.evalsuites { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.evalsuite { border: 1px solid var(--hair); background: var(--panel); box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.evalsuite.boundary { border-color: color-mix(in srgb, var(--signal) 45%, var(--hair)); background: color-mix(in srgb, var(--signal) 6%, var(--panel)); }
+.evalsuitetop { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.evalsuitename { font-weight: 700; font-size: 13px; }
+.evalbadge { font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 45%, var(--hair)); border-radius: 999px; padding: 2px 7px; }
+.evalcases { margin-left: auto; font-size: 10.5px; color: var(--muted); }
+.evalsuiteabout { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.evalsamples { display: flex; flex-direction: column; gap: 5px; }
+.evalq { font-size: 11px; color: var(--ink); background: var(--panel-2); border-left: 2px solid color-mix(in srgb, var(--signal) 50%, var(--hair)); padding: 4px 9px; }
+.evalasserts { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.evalassertk { color: var(--signal); text-transform: uppercase; letter-spacing: .06em; font-size: 9.5px; margin-right: 4px; }
+.evalpaid { font-size: 11px; color: var(--muted); line-height: 1.5; }
+@media (max-width: 720px) { .evalsuites { grid-template-columns: 1fr; } }

@@ -8,7 +8,7 @@ pytest.importorskip("google.adk")
 
 from google.adk.agents import LlmAgent  # noqa: E402
 
-from brain_app.agent.agent import BRAIN_TOOLS, build_brain_agent  # noqa: E402
+from brain_app.agent.agent import CURATE_TOOLS, RESEARCH_TOOLS, build_brain_agent  # noqa: E402
 from brain_app.agent.fake_model import FakeBrainModel  # noqa: E402
 
 
@@ -17,6 +17,7 @@ def _tool_name(tool) -> str:
 
 
 def test_offline_agent_uses_fake_model_and_brain_tools():
+    # Offline stays a single deterministic researcher (hermetic evals).
     agent = build_brain_agent("offline")
     assert isinstance(agent, LlmAgent)
     assert isinstance(agent.model, FakeBrainModel)
@@ -28,16 +29,24 @@ def test_offline_agent_uses_fake_model_and_brain_tools():
     }
 
 
-def test_live_agent_wires_mcp_toolset_filtered_to_brain_tools(monkeypatch):
+def test_live_agent_is_a_coordinator_delegating_to_researcher_and_curator(monkeypatch):
     monkeypatch.setenv("BRAIN_URL", "http://localhost:8080/mcp")
     monkeypatch.setenv("BRAIN_TOKEN", "test-token")
     from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 
-    agent = build_brain_agent("live")
-    assert len(agent.tools) == 1
-    toolset = agent.tools[0]
-    assert isinstance(toolset, MCPToolset)
-    assert set(toolset.tool_filter) == set(BRAIN_TOOLS)
+    coordinator = build_brain_agent("live")
+    # The coordinator delegates; it holds no tools of its own.
+    by_name = {a.name: a for a in coordinator.sub_agents}
+    assert set(by_name) == {"researcher", "curator"}
+
+    # Each sub-agent gets its own MCP toolset, filtered to exactly its role's tools.
+    researcher_tools = by_name["researcher"].tools[0]
+    curator_tools = by_name["curator"].tools[0]
+    assert isinstance(researcher_tools, MCPToolset) and isinstance(curator_tools, MCPToolset)
+    assert set(researcher_tools.tool_filter) == set(RESEARCH_TOOLS)
+    assert set(curator_tools.tool_filter) == set(CURATE_TOOLS)
+    # The curator can propose (write path); the researcher cannot.
+    assert "propose_document" in CURATE_TOOLS and "propose_document" not in RESEARCH_TOOLS
 
 
 def test_unknown_mode_rejected():
