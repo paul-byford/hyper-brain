@@ -6,14 +6,14 @@
 version: 1
 models:
   - id: gemini-2.5-flash
-    purpose: Grounded answer synthesis and the ADK agent team.
+    purpose: Grounded answer synthesis, the ADK agent team, and Studio content curation (raw-to-wiki, simplify, split into linked notes).
     provider: Google Vertex AI
     region: europe-west2
     modality: text-generation
     owner: platform-team
     status: approved
   - id: text-embedding-005
-    purpose: Corpus and query embeddings for hybrid retrieval.
+    purpose: Corpus and query embeddings for hybrid retrieval, and note link suggestions (the autolinker).
     provider: Google Vertex AI
     region: europe-west2
     modality: text-embedding

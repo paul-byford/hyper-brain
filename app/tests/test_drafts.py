@@ -92,6 +92,26 @@ def test_make_draft_from_url_extracts_and_keeps_source(index, embeddings, policy
     assert draft["title"] == "Fraud article"
 
 
+def test_make_draft_from_git_assembles_docs(index, embeddings, policy, monkeypatch):
+    monkeypatch.setattr(
+        "brain_app.serving.gitingest.fetch_repo_docs",
+        lambda repo, ref: [("README.md", "# Overview\n\nWhat it does."), ("docs/api.md", "## API")],
+    )
+    svc = _service(index, embeddings, policy)
+    draft = svc.make_draft(
+        _identity(), kind="git", repo="https://github.com/owner/cool-repo", curate=False
+    )
+    assert draft["source_url"] == "https://github.com/owner/cool-repo"
+    assert draft["title"] == "cool repo"  # derived from the repo name
+    assert "What it does." in draft["content"] and "## docs/api.md" in draft["content"]
+
+
+def test_make_draft_from_git_requires_a_repo(index, embeddings, policy):
+    svc = _service(index, embeddings, policy)
+    with pytest.raises(ValueError):
+        svc.make_draft(_identity(), kind="git", repo="  ", curate=False)
+
+
 def test_make_draft_from_file_parses_markdown(index, embeddings, policy):
     svc = _service(index, embeddings, policy)
     raw = base64.b64encode(b"# Uploaded\n\nBody text.").decode()

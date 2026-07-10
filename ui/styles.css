@@ -359,6 +359,7 @@
   .minisources .mn { flex: 1; letter-spacing: -.01em; }
   .minisources .ms { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
   .minisources .ms.live { color: var(--signal-ink); }
+  .minisources .ms.setup { color: #b06a0e; }
   .gobtn { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--signal-ink); background: transparent; border: 1px solid color-mix(in srgb, var(--signal) 42%, var(--hair)); padding: 7px 11px; }
   .gobtn:hover { background: color-mix(in srgb, var(--signal) 10%, var(--panel)); }
   code.cmd { font-family: var(--mono); font-size: 11.5px; background: var(--panel-2); border: 1px solid var(--hair); border-radius: 6px; padding: 2px 6px; color: var(--signal-ink); }
@@ -410,6 +411,7 @@
   .conncard .dt { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
   .conncard .st { align-self: flex-start; margin-top: auto; font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; padding: 2px 7px; border: 1px solid var(--hair); color: var(--muted); }
   .conncard .st.live { color: var(--signal-ink); border-color: color-mix(in srgb, var(--signal) 42%, var(--hair)); }
+  .conncard .st.setup { color: #b06a0e; border-color: color-mix(in srgb, #d9820b 42%, var(--hair)); }
 
   /* pipeline */
   .pipelinepanel .runbtn { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--signal-ink); background: transparent; border: 1px solid color-mix(in srgb, var(--signal) 42%, var(--hair)); padding: 6px 10px; }
@@ -455,6 +457,8 @@
   .copybtn:hover { background: color-mix(in srgb, var(--signal) 10%, var(--panel)); }
   .copybtn.wide { align-self: flex-start; }
   .modal-note { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; }
+  .modal .steps { margin: 2px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+  .modal .steps li { font-size: 12.5px; color: var(--ink); line-height: 1.5; }
   .archcard { border: 1px solid var(--hair); background: var(--panel); padding: 14px; box-shadow: var(--shadow); }
   .archcard .k { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 8px; letter-spacing: -.01em; }
   .archcard .k::before { content: ""; width: 7px; height: 7px; background: var(--signal); flex: none; }
@@ -711,13 +715,29 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 /* ---- Studio: content input + curation ---- */
 #page-studio { display: flex; flex-direction: column; gap: 14px; }
 #page-studio[hidden] { display: none; }
-.studiogrid { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 16px; align-items: start; }
-.studioinput .seg { margin-bottom: 12px; }
+/* The studio stacks full-width: the source panel on top, the draft below. Once a draft
+   exists the source panel collapses to just its header (still full width) so the draft
+   has the room; the user can re-open it to pick another source, and it animates back
+   open when they submit, ready for the next piece of content. */
+.studiogrid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+.studioinput .seg { flex-wrap: wrap; margin-bottom: 12px; }
+.studioinput header { display: flex; align-items: center; }
+.studioinput.collapsible header { cursor: pointer; }
+.studioinput .srctoggle { margin-left: auto; display: none; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.studioinput.collapsible .srctoggle { display: inline-flex; }
+.studioinput.collapsible header:hover .srctoggle { color: var(--ink); }
+.studioinput .srctoggle .chev { display: inline-block; transition: transform .3s ease; }
+.studioinput.collapsed .srctoggle .chev { transform: rotate(-90deg); }
+.studioinput .body { overflow: hidden; max-height: 1200px; transition: max-height .4s ease, opacity .3s ease, padding .4s ease; }
+.studioinput.collapsed .body { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+@media (prefers-reduced-motion: reduce) { .studioinput .body, .studioinput .srctoggle .chev { transition: none; } }
 .studiofield { margin-bottom: 10px; }
-.studiofield input[type="url"], #studiotext {
+.studiofield input[type="url"], .studiofield input[type="text"], #studiotext {
   width: 100%; background: var(--panel-2); border: 1px solid var(--hair); color: var(--ink);
   font-family: var(--mono); font-size: 12.5px; padding: 9px 11px; box-sizing: border-box;
 }
+.studiofield input + input { margin-top: 8px; }
+.studiohint { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
 #studiotext { resize: vertical; line-height: 1.5; }
 .studiofilename { color: var(--muted); font-size: 11px; }
 .studiotoggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink); margin: 4px 0 12px; cursor: pointer; }
@@ -779,7 +799,7 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .spl-body { width: 100%; min-height: 150px; background: var(--panel-2); border: 1px solid var(--hair); color: var(--ink); font-family: var(--mono); font-size: 12px; line-height: 1.55; padding: 10px; box-sizing: border-box; resize: vertical; }
 .spl-preview { max-height: 240px; }
 @media (max-width: 900px) { .splitcols { grid-template-columns: 1fr; } }
-@media (max-width: 900px) { .studiogrid { grid-template-columns: 1fr; } .draftcols { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .draftcols { grid-template-columns: 1fr; } }
 
 /* Studio: generate progress, suggested links, and the graceful create transition */
 .studiostat { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 12px; color: var(--muted); }

@@ -889,10 +889,13 @@ class BrainService:
         text: str | None = None,
         filename: str | None = None,
         content_base64: str | None = None,
+        repo: str | None = None,
+        ref: str | None = None,
         curate: bool = True,
     ) -> dict:
-        """Turn a URL, file, or pasted text into an editable draft. Nothing is written:
-        the caller reviews/edits, then creates it via add_note or propose_document."""
+        """Turn a URL, file, pasted text, or a public git repo into an editable draft.
+        Nothing is written: the caller reviews/edits, then creates it via add_note or
+        propose_document."""
         from ..ingest.models import ParsedDoc
 
         kind = (kind or "").lower()
@@ -919,6 +922,45 @@ class BrainService:
                     raise ValueError("a file is required")
                 body = self._extract_upload_body(filename, content_base64)
                 default_title = _title_from_filename(filename)
+            elif kind == "git":
+                from .gitingest import fetch_repo_docs
+
+                if not repo or not repo.strip():
+                    raise ValueError("a repository URL is required")
+                docs = fetch_repo_docs(repo.strip(), ref or "main")
+                repo_name = repo.strip().rstrip("/").split("/")[-1]
+                if repo_name.endswith(".git"):
+                    repo_name = repo_name[:-4]
+                default_title = repo_name.replace("-", " ").replace("_", " ").strip()
+                # Assemble the repo's docs into one draft (README first). The user can then
+                # curate it and use "split into linked notes" to break it into a set.
+                sections = [f"Imported from {repo.strip()}", ""]
+                for path, doc_text in docs:
+                    sections.append(f"## {path}")
+                    sections.append(doc_text)
+                    sections.append("")
+                body = "\n".join(sections)
+                source_url = repo.strip()
+            elif kind == "transcript":
+                from .transcripts import parse_transcript
+
+                # A chat export or meeting transcript, pasted or uploaded. Read the raw
+                # text (transcript formats like .vtt/.srt are plain text) and normalise.
+                if content_base64:
+                    import base64 as _b64
+
+                    try:
+                        raw_text = _b64.b64decode(content_base64).decode("utf-8", errors="replace")
+                    except (binascii.Error, ValueError) as exc:
+                        raise ValueError("could not read the uploaded transcript") from exc
+                    if filename:
+                        default_title = _title_from_filename(filename)
+                elif text and text.strip():
+                    raw_text = text
+                else:
+                    raise ValueError("paste or upload a chat export or transcript")
+                parsed_title, body = parse_transcript(raw_text)
+                default_title = default_title or parsed_title
             else:
                 raise ValueError(f"unknown draft source {kind!r}")
 

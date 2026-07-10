@@ -210,7 +210,7 @@
       <div class="sechead">
         <span class="eyebrow">Sources</span>
         <h3>Onboarding content</h3>
-        <p>Connectors bring knowledge into the brain: files, web and code today, and conversations, meeting transcripts and even autonomous agents through the same governed pipeline. Agents are the neat case: they sit on both sides, drafting new notes and drawing on the result. Onboarding a source is a configuration, not a rebuild.</p>
+        <p>Connectors bring knowledge into the brain: files, web pages and public git repositories, plus Microsoft Teams chats and meeting transcripts by import, all through the same governed pipeline. Agents are the neat case: an assistant like Claude connects over MCP, draws on the brain, and proposes new notes through the same review as people. Onboarding a source is a configuration, not a rebuild.</p>
       </div>
       <div class="cardgrid" id="sourcecards"></div>
 
@@ -227,10 +227,10 @@
       <div class="sechead">
         <span class="eyebrow">Surfaces</span>
         <h3>Where the brain shows up</h3>
-        <p>Every surface talks to the same governed brain over MCP: a coding assistant in the IDE, a grounded chat or voice assistant, this app, or one you build. Point a new client at the endpoint and it works immediately, with no copy of the data and no new access path to secure.</p>
+        <p>Every surface talks to the same governed brain over MCP: a coding assistant in the IDE, a grounded chat assistant, this app, or one you build. Point a new client at the endpoint and it works immediately, with no copy of the data and no new access path to secure.</p>
       </div>
       <div class="cardgrid" id="surfacecards"></div>
-      <div class="accessnote"><b>Every surface authenticates the same way.</b> A caller presents a Google-signed OIDC token; the brain verifies it, resolves the principal against the policy, and clamps every read and write to the domains they may see, so one endpoint safely serves an IDE, an assistant and this UI at once.</div>
+      <div class="accessnote"><b>Every surface authenticates the same way.</b> A caller signs in with Google, remote MCP clients through the OAuth flow and scripts with a Google-signed token; the brain verifies it, resolves the principal against the policy, and clamps every read and write to the domains they may see, so one endpoint safely serves an IDE, an assistant and this UI at once.</div>
     </section>
 
     <section class="connsec">
@@ -268,11 +268,11 @@
       <span class="agentmode demo" id="agentmode">Simulated flow</span>
       <span class="agentcap mono" id="agentcap"></span>
     </div>
-    <div class="agentwrap" id="agentwrap"><canvas id="agentcanvas"></canvas></div>
     <div class="agentanswer" id="agentanswer" hidden>
       <div class="agentanswerlbl mono"><span class="spark"></span>Agent response</div>
       <div class="agentanswerbody" id="agentanswerbody"></div>
     </div>
+    <div class="agentwrap" id="agentwrap"><canvas id="agentcanvas"></canvas></div>
     <div class="agentlegend">
       <span><i class="adot-gold"></i> ADK agents (coordinator + specialists)</span>
       <span><i class="adot-slate"></i> Governed brain over MCP</span>
@@ -302,16 +302,30 @@
       <p>Fetch a web page, upload a file, or paste text. The studio pulls out the real content and, if you like, cleans it into a well-structured draft with suggested links to your existing notes. Review and edit it, then create it in your personal space or propose it to a team for review. Nothing is saved until you create it.</p>
     </div>
     <div class="studiogrid">
-      <section class="panel studioinput">
-        <header><h2>Source</h2></header>
+      <section class="panel studioinput" id="sourcepanel">
+        <header><h2>Source</h2><span class="srctoggle" id="srctoggle" role="button" tabindex="0"><span class="chev">▾</span><span id="srctogglelabel">Collapse</span></span></header>
         <div class="body">
           <div class="seg" id="studioseg" role="group" aria-label="Input method">
             <button data-src="url" class="on">From a URL</button>
+            <button data-src="git">From a git repo</button>
+            <button data-src="chat">Chat / transcript</button>
             <button data-src="file">From a file</button>
             <button data-src="text">Paste text</button>
           </div>
           <div class="studiofield" id="sf-url">
             <input id="studiourl" type="url" placeholder="https://example.com/article" />
+          </div>
+          <div class="studiofield" id="sf-git" hidden>
+            <input id="studiorepo" type="url" placeholder="https://github.com/owner/repo" />
+            <input id="studioref" type="text" placeholder="branch (optional, default: main)" />
+            <p class="studiohint">Public GitHub, GitLab or Bitbucket. The docs (README, .md, .rst, .txt) are pulled into one draft you can curate and split. Kept to smaller repos: 20&nbsp;MB archive, up to 40 files.</p>
+          </div>
+          <div class="studiofield" id="sf-chat" hidden>
+            <textarea id="studiochat" rows="6" placeholder="Paste a Teams chat export (JSON) or a meeting transcript (VTT, SRT or text)…"></textarea>
+            <button class="ghostbtn" id="studiochatfilebtn">…or choose a transcript file</button>
+            <input type="file" id="studiochatfile" accept=".vtt,.srt,.txt,.json,.md" hidden />
+            <span class="studiofilename mono" id="studiochatfilename"></span>
+            <p class="studiohint">Speakers and timestamps are cleaned up into a readable note. See the <b>Conversations</b> and <b>Voice &amp; meetings</b> cards on <b>Architecture → Connections</b> for how to export from Teams or your meeting tool.</p>
           </div>
           <div class="studiofield" id="sf-file" hidden>
             <button class="ghostbtn" id="studiofilebtn">Choose a file…</button>
@@ -411,10 +425,10 @@
         <div class="a-zone">
           <div class="zh"><span class="adot adot-gold"></span><span class="k">Cloud Run · services</span><span class="sub">scale to zero</span></div>
           <div class="zb">
-            <div class="a-node cat-gold"><div class="nn">brain</div><div class="nd">the MCP server; verifies OIDC/OAuth, enforces the domain ACL, serves five tools</div></div>
+            <div class="a-node cat-gold"><div class="nn">brain</div><div class="nd">the MCP server; verifies OIDC/OAuth, enforces the domain ACL, serves the governed tools (search, answer, notes, sharing, review)</div></div>
             <div class="a-node cat-gold"><div class="nn">auth</div><div class="nd">OAuth 2.1 Authorization Server; DCR, PKCE, Google-brokered login, signs JWTs</div></div>
             <div class="a-node cat-gold"><div class="nn">agent</div><div class="nd">Google ADK assistant; answers grounded, cited questions via the brain</div></div>
-            <div class="a-node cat-gold"><div class="nn">ui</div><div class="nd">Brain Explorer (nginx static): graph, search, this page</div></div>
+            <div class="a-node cat-gold"><div class="nn">ui</div><div class="nd">Brain Explorer (nginx static): graph, search, Studio, sharing, this page</div></div>
           </div>
         </div>
         <div class="a-zone">
@@ -429,6 +443,7 @@
           <div class="zb">
             <div class="a-node cat-slate"><div class="nn">corpus</div><div class="nd">markdown knowledge + staged proposals</div></div>
             <div class="a-node cat-slate"><div class="nn">index</div><div class="nd">index.json · policy.yaml · sources.yaml</div></div>
+            <div class="a-node cat-slate"><div class="nn">shares</div><div class="nd">per-owner sharing grants + moderation reports</div></div>
             <div class="a-node cat-slate"><div class="nn">tfstate</div><div class="nd">Terraform state (bootstrap bucket)</div></div>
           </div>
         </div>
@@ -501,6 +516,15 @@
           <span class="a-arrow"><span class="lbl">write index.json</span>→</span><span class="a-chip">index bucket</span>
         </div>
       </div>
+      <div class="a-flow">
+        <div class="fh"><span class="n">05</span><span class="t">Create in Studio</span><span class="d">the interactive path, through the brain</span></div>
+        <div class="a-chain">
+          <span class="a-chip out">URL · git · chat · file</span>
+          <span class="a-arrow"><span class="lbl">draft</span>→</span><span class="a-chip acc">brain</span>
+          <span class="a-arrow"><span class="lbl">curate</span>→</span><span class="a-chip">Vertex · Gemini</span>
+          <span class="a-arrow"><span class="lbl">add note · propose</span>→</span><span class="a-chip">corpus bucket</span>
+        </div>
+      </div>
       <div class="a-crosscut"><b>Cross-cutting:</b> every service and job runs as its <b>own least-privilege service account</b>; images come from <b>Artifact Registry</b>; requests are traced end to end in <b>Cloud Trace</b>. The corpus, the embeddings and the synthesis all stay inside your region and project, so sensitive content never reaches a third party. Idle cost is near zero: nothing runs until something asks.</div>
     </div>
 
@@ -557,12 +581,21 @@
   <div class="modal" id="mcpmodal" hidden>
     <div class="modal-backdrop" data-close></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-label="MCP connector">
-      <header><h2>MCP connector</h2><button class="docclose" data-close aria-label="Close">✕ close</button></header>
+      <header><h2>Connect an agent over MCP</h2><button class="docclose" data-close aria-label="Close">✕ close</button></header>
       <div class="body">
-        <p class="modal-lead">Hyper Brain is an MCP server over streamable HTTPS. Point any MCP-capable client at the endpoint, authenticate with a Google-signed token, and it can read the brain, clamped to the domains that caller may see.</p>
+        <p class="modal-lead">Hyper Brain is an MCP server over streamable HTTPS with an in-tenancy OAuth 2.1 server in front. An assistant like Claude connects by signing in with Google, then reads the brain and proposes notes, clamped to the domains that person may see.</p>
+
+        <span class="eyebrow">Add to Claude (recommended, no token)</span>
+        <ol class="steps">
+          <li>In Claude, open <b>Settings → Connectors → Add custom connector</b>.</li>
+          <li>Paste the endpoint URL below as the connector URL, and click <b>Add</b>.</li>
+          <li>Click <b>Connect</b>, then <b>sign in with Google</b> when the browser opens.</li>
+          <li>Done. Claude can now search, answer and propose, scoped to your access.</li>
+        </ol>
         <div class="field2"><span class="fl">Endpoint</span><code class="cbox" id="mcpurl">https://hyper-brain-xxxxxx-nw.a.run.app/mcp</code><button class="copybtn" data-copy="#mcpurl">Copy</button></div>
-        <div class="field2"><span class="fl">Auth</span><code class="cbox">Authorization: Bearer &lt;Google&nbsp;OIDC&nbsp;token&gt;</code></div>
-        <span class="eyebrow">Client config</span>
+        <p class="modal-note">There is no token to paste and no app to register: the brain advertises its OAuth server (protected-resource metadata), the client registers itself, and Google signs you in with PKCE. Works the same in any MCP client that supports custom connectors (Claude web and desktop, ChatGPT).</p>
+
+        <span class="eyebrow">For scripts &amp; machine clients (token auth)</span>
         <pre class="codeblock" id="mcpconf">{
   "mcpServers": {
     "hyper-brain": {
@@ -575,7 +608,60 @@
   }
 }</pre>
         <button class="copybtn wide" data-copy="#mcpconf">Copy config</button>
-        <p class="modal-note"><b>Remote connectors (Claude / ChatGPT):</b> just add the endpoint URL as a custom connector and sign in with Google, with no token to paste. For scripts and machine-to-machine clients, mint a token with <code class="cmd">gcloud auth print-identity-token</code> (audience = the service URL) or impersonate a service account. Every call is verified and domain-scoped by policy.</p>
+        <p class="modal-note">For a non-interactive client, mint a token with <code class="cmd">gcloud auth print-identity-token</code> (audience = the service URL) or impersonate a service account. Every call is verified and domain-scoped by policy.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversations connector: Microsoft Teams -->
+  <div class="modal" id="teamsmodal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Microsoft Teams connector">
+      <header><h2>Conversations · Microsoft Teams</h2><button class="docclose" data-close aria-label="Close">✕ close</button></header>
+      <div class="body">
+        <p class="modal-lead">Bring a Teams chat or channel thread into the brain as a governed, provenance-stamped note, cleaned into a readable, speaker-attributed conversation.</p>
+
+        <span class="eyebrow">Import one now (demo)</span>
+        <ol class="steps">
+          <li>Export the messages as JSON from the Graph Explorer, e.g. <code class="cmd">GET /chats/{id}/messages</code> or <code class="cmd">/teams/{id}/channels/{id}/messages</code>.</li>
+          <li>In <b>Studio</b>, choose the <b>Chat / transcript</b> source.</li>
+          <li>Paste the JSON (or upload the <span class="mono">.json</span>), generate the draft, then create or propose it.</li>
+        </ol>
+        <p class="modal-note">A plain copy-paste of a thread works too; the importer detects Teams/Graph JSON and falls back to plain text.</p>
+
+        <span class="eyebrow">Wire a live connector (your tenant)</span>
+        <ol class="steps">
+          <li>Register an app in <b>Microsoft Entra ID</b> (Azure AD) in your tenant.</li>
+          <li>Grant Microsoft Graph application permissions <code class="cmd">Chat.Read.All</code> / <code class="cmd">ChannelMessage.Read.All</code> and get admin consent.</li>
+          <li>Point a scheduled ingest at the Graph messages endpoint, landing into a chosen domain, through the same review as every other source.</li>
+        </ol>
+        <p class="modal-note">The live connector needs your own Entra app and admin consent, so it is a one-time configuration in your tenancy; the import above needs none of that.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voice & meetings connector -->
+  <div class="modal" id="meetingsmodal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Meetings connector">
+      <header><h2>Voice &amp; meetings</h2><button class="docclose" data-close aria-label="Close">✕ close</button></header>
+      <div class="body">
+        <p class="modal-lead">Turn a meeting recording's transcript into a note: the tacit knowledge only ever said out loud, made searchable and citable like everything else.</p>
+
+        <span class="eyebrow">Import one now (demo)</span>
+        <ol class="steps">
+          <li>Download the transcript from your meeting tool: a <span class="mono">.vtt</span>, <span class="mono">.srt</span> or plain text file.</li>
+          <li>In <b>Studio</b>, choose the <b>Chat / transcript</b> source, then upload the file or paste the transcript.</li>
+          <li>Timestamps and cue numbers are stripped and speakers kept; generate the draft, then create or propose it.</li>
+        </ol>
+
+        <span class="eyebrow">Wire a live connector (your platform)</span>
+        <ol class="steps">
+          <li>Enable transcription/recording in your meeting platform so a transcript is produced per call.</li>
+          <li>Have the platform deliver the transcript file (webhook or export) to an ingest bucket.</li>
+          <li>A scheduled ingest parses and lands it into a chosen domain, through the same review as every other source.</li>
+        </ol>
+        <p class="modal-note">Formats supported by the importer today: WebVTT (.vtt), SubRip (.srt) and plain text.</p>
       </div>
     </div>
   </div>

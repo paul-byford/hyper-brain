@@ -127,6 +127,8 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
             text=data.get("text"),
             filename=data.get("filename"),
             content_base64=data.get("content_base64"),
+            repo=data.get("repo"),
+            ref=data.get("ref"),
             curate=bool(data.get("curate", True)),
         )
         return JSONResponse(result)

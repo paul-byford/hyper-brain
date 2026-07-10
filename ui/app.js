@@ -636,8 +636,15 @@ function wireLive() {
     studioFile = (e.target.files && e.target.files[0]) || null;
     $("#studiofilename").textContent = studioFile ? studioFile.name : "";
   });
+  $("#studiochatfilebtn").addEventListener("click", () => $("#studiochatfile").click());
+  $("#studiochatfile").addEventListener("change", (e) => {
+    studioChatFile = (e.target.files && e.target.files[0]) || null;
+    $("#studiochatfilename").textContent = studioChatFile ? studioChatFile.name : "";
+  });
   $("#studiourl").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); generateDraft(); } });
   $("#studiogen").addEventListener("click", generateDraft);
+  $("#sourcepanel").querySelector("header").addEventListener("click", toggleSource);
+  $("#srctoggle").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSource(); } });
   $("#draftcontent").addEventListener("input", () => { renderDraftPreview(); updateSplitVisibility(); });
   $("#drafttarget").addEventListener("change", () => { updateCreateLabel(); loadDraftLinks(); });
   $("#draftcreate").addEventListener("click", draftCreateClicked);
@@ -1351,20 +1358,24 @@ function setMode(m) {
 // ============================================================================
 //  Connections page
 // ============================================================================
+// Status vocabulary, kept honest: "Live" = demoable in this app right now; "Setup" =
+// works but needs a one-time connection set up (opens an instructions card); "Roadmap"
+// = designed, not yet built. We name a specific vendor only where that vendor's own
+// connection is actually wired.
 const SOURCES = [
-  { glyph: "▤", name: "Files & docs", detail: "PDFs, slides and markdown, uploaded or from Drive and SharePoint.", status: "Live" },
-  { glyph: "◍", name: "Web & wikis", detail: "Pages by URL, plus Confluence and Notion spaces.", status: "Live" },
-  { glyph: "◈", name: "Code", detail: "Git repos: READMEs, ADRs and docs, onboarded on every sync.", status: "Live" },
-  { glyph: "◗", name: "Conversations", detail: "Slack, Teams and email threads worth remembering.", status: "Connector" },
-  { glyph: "◎", name: "Voice & meetings", detail: "Transcripts from Zoom, Meet, Gong or Otter: the tacit knowledge only ever said out loud.", status: "Connector" },
-  { glyph: "✦", name: "Agents", detail: "Research agents draft notes and propose them through the same gated review as people.", status: "Connector" },
+  { glyph: "▤", name: "Files & docs", detail: "PDFs, Word documents and markdown, uploaded in Studio.", status: "Live" },
+  { glyph: "◍", name: "Web & wikis", detail: "Any public web page or wiki article, by its URL.", status: "Live" },
+  { glyph: "◈", name: "Code", detail: "Public git repositories: their READMEs, ADRs and markdown docs.", status: "Live" },
+  { glyph: "◗", name: "Conversations", detail: "Microsoft Teams chat threads worth remembering, imported as an export.", status: "Setup", action: "teams" },
+  { glyph: "◎", name: "Voice & meetings", detail: "Meeting transcripts (VTT, SRT or text) exported from your call platform.", status: "Setup", action: "meetings" },
+  { glyph: "✦", name: "Agents", detail: "Assistants like Claude connect over MCP and propose notes through the same review as people.", status: "Live", action: "mcp" },
 ];
 const SURFACES = [
-  { glyph: "◧", name: "Coding assistants", detail: "MCP inside IDEs like Claude Code and Cursor: grounded answers where engineers work.", status: "Live" },
-  { glyph: "◆", name: "Grounded assistant", detail: "A chat assistant, built on Google ADK, that answers from Hyper Brain with citations, on the web, in Slack or in Teams.", status: "Live" },
-  { glyph: "∿", name: "Voice assistant", detail: "Ask by voice and hear a grounded answer read back, with the citations kept as a transcript. Voice sits on both sides: it comes in as meeting transcripts and goes out as answers.", status: "Connector" },
+  { glyph: "◧", name: "Coding assistants", detail: "Any MCP-capable IDE or assistant reads the brain over the same endpoint, where engineers work.", status: "Live", action: "mcp" },
+  { glyph: "◆", name: "Grounded assistant", detail: "A chat assistant, built on Google ADK, that answers from Hyper Brain with citations.", status: "Live" },
+  { glyph: "∿", name: "Voice assistant", detail: "Ask by voice and hear a grounded answer read back, keeping the citations as a transcript.", status: "Roadmap" },
   { glyph: "◉", name: "Hyper Brain UI", detail: "This app: browse, search, read and propose.", status: "Live" },
-  { glyph: "⬡", name: "Embedded / API", detail: "Point any internal app at the MCP endpoint, and build your own surface.", status: "Connector", action: "mcp" },
+  { glyph: "⬡", name: "Embedded / API", detail: "Point any internal app at the MCP endpoint, and build your own surface.", status: "Live", action: "mcp" },
 ];
 const STAGES = [
   { k: "Fetch", d: "A connector pulls the raw item from its source, in-tenancy, so nothing leaves your cloud." },
@@ -1378,21 +1389,29 @@ const ARCH = [
   { k: "In-tenancy boundary", d: "Corpus, embeddings and synthesis never leave your own cloud tenancy." },
   { k: "Vertex, in-region", d: "Embeddings and Gemini answers are generated inside your region." },
   { k: "Least-privilege IAM", d: "Every service runs as its own minimal, single-purpose service account." },
-  { k: "Provenance & gated writes", d: "Every note carries its source; new content is reviewed before it merges." },
+  { k: "Provenance & governed writes", d: "Every note carries its source. Personal notes stay private, the commons is open with rate-limiting and community moderation, and team domains land through review." },
   { k: "Observability", d: "Every request is traced end to end in Cloud Trace." },
 ];
 
+// Honest badge colour: green for Live, amber for Setup, muted for Roadmap.
+function statusClass(status) {
+  return status === "Live" ? "live" : status === "Setup" ? "setup" : "";
+}
 function connCard(c) {
-  const live = c.status === "Live";
-  const badge = `<span class="st ${live ? "live" : ""}">${c.status}</span>`;
+  const badge = `<span class="st ${statusClass(c.status)}">${c.status}</span>`;
   const foot = c.action
-    ? `<div class="cardfoot">${badge}<span class="actionhint">Connector info →</span></div>`
+    ? `<div class="cardfoot">${badge}<span class="actionhint">Connection setup →</span></div>`
     : badge;
   const open = c.action
     ? `<div class="conncard action" data-action="${c.action}" role="button" tabindex="0">`
     : `<div class="conncard">`;
   return `${open}<div class="top"><div class="cg">${c.glyph}</div><div class="nm">${c.name}</div></div>`
     + `<div class="dt">${c.detail}</div>${foot}</div>`;
+}
+// Dispatch a card's connection-setup action to its instructions modal.
+function openConnAction(action) {
+  const modal = { mcp: "mcpmodal", teams: "teamsmodal", meetings: "meetingsmodal" }[action];
+  if (modal) { const el = $("#" + modal); if (el) el.hidden = false; }
 }
 function renderConnections() {
   $("#sourcecards").innerHTML = SOURCES.map(connCard).join("");
@@ -1404,16 +1423,20 @@ function renderConnections() {
   showStage(0);
   $("#runpipe").addEventListener("click", runPipeline);
 
-  const sc = $("#surfacecards");
-  sc.addEventListener("click", (e) => { if (e.target.closest('.conncard.action[data-action="mcp"]')) openMcp(); });
-  sc.addEventListener("keydown", (e) => {
-    if ((e.key === "Enter" || e.key === " ") && e.target.closest('.conncard.action[data-action="mcp"]')) { e.preventDefault(); openMcp(); }
-  });
+  // Both source and surface cards can carry a connection-setup action.
+  for (const id of ["#sourcecards", "#surfacecards"]) {
+    const box = $(id); if (!box) continue;
+    box.addEventListener("click", (e) => { const a = e.target.closest(".conncard.action"); if (a) openConnAction(a.dataset.action); });
+    box.addEventListener("keydown", (e) => {
+      const a = e.target.closest(".conncard.action");
+      if (a && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openConnAction(a.dataset.action); }
+    });
+  }
 
   // The Explore page "Add data" panel mirrors the same source categories.
   const ms = $("#minisources");
   if (ms) ms.innerHTML = SOURCES.map((s) =>
-    `<li><span class="mg">${s.glyph}</span><span class="mn">${s.name}</span><span class="ms ${s.status === "Live" ? "live" : ""}">${s.status}</span></li>`).join("");
+    `<li><span class="mg">${s.glyph}</span><span class="mn">${s.name}</span><span class="ms ${statusClass(s.status)}">${s.status}</span></li>`).join("");
   const tc = $("#toconnect");
   if (tc) tc.addEventListener("click", () => setPage("connect"));
 }
@@ -1458,7 +1481,7 @@ function closeMcp() { mcpmodal.hidden = true; }
 // ---- Connections flow diagram (canvas) --------------------------------------
 const flow = $("#flow"), fx = flow.getContext("2d");
 let fW = 0, fH = 0, fdpr = 1, flowActive = false, flowRunning = false, fparts = [];
-const SRC_L = ["Files", "Web", "Voice", "Code", "Agents"];
+const SRC_L = ["Files", "Web", "Code", "Chat & voice", "Agents"];
 const SURF_L = ["IDEs", "Assistant", "This UI", "Your apps", "+ surfaces"];
 const FN = 5;
 const fam = () => cssVar("--sans").replace(/"/g, "");
@@ -1899,7 +1922,7 @@ function agentAt(clientX, clientY) {
 // ---- Page switching (Connections / Explore) ---------------------------------
 let graphSized = false;
 // ---- Studio: bring in content (URL / file / text) and curate it into a draft ----
-let studioSrc = "url", studioFile = null, studioDraft = null;
+let studioSrc = "url", studioFile = null, studioChatFile = null, studioDraft = null;
 let splitItems = null; // when set, the draft panel is in split review/edit mode
 function renderStudio() {
   if (!LIVE) { studioMsg("Sign in to bring in and curate content."); return; }
@@ -1924,8 +1947,32 @@ function setStudioSrc(src) {
   studioSrc = src;
   for (const b of $("#studioseg").querySelectorAll("button")) b.classList.toggle("on", b.dataset.src === src);
   $("#sf-url").hidden = src !== "url";
+  $("#sf-git").hidden = src !== "git";
+  $("#sf-chat").hidden = src !== "chat";
   $("#sf-file").hidden = src !== "file";
   $("#sf-text").hidden = src !== "text";
+}
+// The source panel collapses to its header while a draft is open (freeing the space for
+// it), stays re-openable, and animates back open when the draft is submitted.
+function updateSrcToggle() {
+  const p = $("#sourcepanel"), lbl = $("#srctogglelabel");
+  if (p && lbl) lbl.textContent = p.classList.contains("collapsed") ? "Change source" : "Collapse";
+}
+function collapseSource() {
+  const p = $("#sourcepanel"); if (!p) return;
+  p.classList.add("collapsible", "collapsed"); updateSrcToggle();
+}
+function expandSource() {
+  const p = $("#sourcepanel"); if (!p) return;
+  p.classList.add("collapsible"); p.classList.remove("collapsed"); updateSrcToggle();
+}
+function resetSourcePanel() {
+  const p = $("#sourcepanel"); if (!p) return;
+  p.classList.remove("collapsed", "collapsible"); updateSrcToggle();
+}
+function toggleSource() {
+  const p = $("#sourcepanel"); if (!p || !p.classList.contains("collapsible")) return;
+  p.classList.toggle("collapsed"); updateSrcToggle();
 }
 async function generateDraft() {
   if (!LIVE) return;
@@ -1935,6 +1982,21 @@ async function generateDraft() {
     const url = $("#studiourl").value.trim();
     if (!url) return studioMsg("Enter a URL to fetch.");
     payload.kind = "url"; payload.url = url;
+  } else if (studioSrc === "git") {
+    const repo = $("#studiorepo").value.trim();
+    if (!repo) return studioMsg("Enter a public git repository URL.");
+    payload.kind = "git"; payload.repo = repo;
+    const ref = $("#studioref").value.trim(); if (ref) payload.ref = ref;
+  } else if (studioSrc === "chat") {
+    payload.kind = "transcript";
+    if (studioChatFile) {
+      payload.filename = studioChatFile.name;
+      payload.content_base64 = await fileToBase64(studioChatFile);
+    } else {
+      const chat = $("#studiochat").value.trim();
+      if (!chat) return studioMsg("Paste a chat export or transcript, or choose a file.");
+      payload.text = chat;
+    }
   } else if (studioSrc === "text") {
     const text = $("#studiotext").value.trim();
     if (!text) return studioMsg("Paste some text to curate.");
@@ -1949,9 +2011,13 @@ async function generateDraft() {
   const ai = curate ? "Curating with Gemini Vertex (this can take ~30s)…" : "Preparing the draft…";
   const steps = studioSrc === "url"
     ? ["Fetching the page…", "Extracting the main content…", ai, "Polishing the draft…"]
-    : studioSrc === "file"
-      ? ["Parsing the file…", ai, "Polishing the draft…"]
-      : [ai, "Structuring the draft…"];
+    : studioSrc === "git"
+      ? ["Fetching the repository archive…", "Collecting the docs…", ai, "Polishing the draft…"]
+      : studioSrc === "chat"
+        ? ["Reading the transcript…", "Cleaning up speakers and timestamps…", ai, "Polishing the draft…"]
+        : studioSrc === "file"
+          ? ["Parsing the file…", ai, "Polishing the draft…"]
+          : [ai, "Structuring the draft…"];
   startStudioProgress(steps);
   try {
     studioDraft = await API.draft(payload);
@@ -1997,6 +2063,7 @@ function openDraft(draft) {
   const ds = $("#draftsuccess"); ds.hidden = true; ds.classList.remove("show");
   $("#draftbody").style.opacity = "1";
   $("#studiodraft").hidden = false;
+  collapseSource(); // a draft is open now: fold the source panel away, still re-openable
   loadDraftLinks();
 }
 function renderDraftTargets() {
@@ -2075,14 +2142,18 @@ function studioSuccess(title, msg) {
   $("#ds-msg").textContent = msg;
   const ds = $("#draftsuccess"); ds.hidden = false;
   requestAnimationFrame(() => ds.classList.add("show"));
+  expandSource(); // submitted: re-open the source panel so the next piece is ready to go
 }
 function resetStudio() {
   const ds = $("#draftsuccess"); if (ds) { ds.classList.remove("show"); ds.hidden = true; }
   $("#draftbody").style.opacity = "1";
   $("#studiodraft").hidden = true;
   $("#draftcreate").disabled = false;
+  resetSourcePanel(); // back to the initial full, non-collapsible state
   splitItems = null; $("#splitview").hidden = true; $("#draftsingle").hidden = false; $("#draftdiscard").textContent = "Discard";
   $("#studiourl").value = ""; $("#studiotext").value = ""; studioFile = null; $("#studiofilename").textContent = "";
+  $("#studiochat").value = ""; studioChatFile = null; $("#studiochatfilename").textContent = "";
+  $("#studiorepo").value = ""; $("#studioref").value = "";
   $("#draftresult").innerHTML = ""; studioMsg("");
   if (studioSrc === "url") $("#studiourl").focus();
 }
@@ -2090,6 +2161,7 @@ function discardDraft() {
   studioDraft = null; $("#studiodraft").hidden = true; $("#draftresult").innerHTML = "";
   const ds = $("#draftsuccess"); if (ds) { ds.classList.remove("show"); ds.hidden = true; }
   $("#draftbody").style.opacity = "1"; $("#draftcreate").disabled = false;
+  resetSourcePanel(); // draft dropped: restore the full source panel
 }
 function draftTags() {
   return $("#drafttags").value.split(",").map((t) => t.trim()).filter(Boolean);
@@ -2350,10 +2422,13 @@ function wireStatic() {
     agentCanvas.style.cursor = agentAt(e.clientX, e.clientY) ? "pointer" : "default";
   });
 
-  // modal
-  mcpmodal.addEventListener("click", (e) => {
-    if (e.target.matches("[data-close]") || e.target.classList.contains("modal-backdrop")) closeMcp();
-  });
+  // Connection-instruction modals (MCP / Teams / meetings): click backdrop or close to dismiss.
+  for (const id of ["mcpmodal", "teamsmodal", "meetingsmodal"]) {
+    const m = $("#" + id); if (!m) continue;
+    m.addEventListener("click", (e) => {
+      if (e.target.matches("[data-close]") || e.target.classList.contains("modal-backdrop")) m.hidden = true;
+    });
+  }
   document.querySelectorAll(".copybtn").forEach((b) => b.addEventListener("click", () => {
     const el = document.querySelector(b.dataset.copy); if (!el) return;
     const text = el.textContent;
@@ -2372,7 +2447,9 @@ function wireStatic() {
   // global keys
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("#query").focus(); }
-    else if (e.key === "Escape" && !mcpmodal.hidden) closeMcp();
+    else if (e.key === "Escape" && (!mcpmodal.hidden || !$("#teamsmodal").hidden || !$("#meetingsmodal").hidden)) {
+      mcpmodal.hidden = true; $("#teamsmodal").hidden = true; $("#meetingsmodal").hidden = true;
+    }
     else if (e.key === "Escape" && state.mode === "read") setMode("explore");
   });
 
