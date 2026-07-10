@@ -894,11 +894,14 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 @media (max-width: 640px) {
   .app { padding: 14px 14px 30px; gap: 14px; }
 
-  /* Topbar: brand + status/theme cluster on row one, nav as a scroll strip
-     on its own full-width row two. */
-  .topbar { gap: 9px 10px; }
+  /* Topbar: brand + theme toggle pinned to the top row, status cluster and
+     nav each on their own full-width row below. Pinning the toggle top-right
+     (rather than letting it wrap as the last item in the right cluster)
+     reclaims the row it used to fall onto. */
+  .topbar { gap: 9px 10px; position: relative; }
   .brand h1 { font-size: 17px; }
-  .bar-right { flex: 1 1 auto; gap: 8px; }
+  .themetgl { position: absolute; top: 0; right: 0; margin: 0; }
+  .bar-right { flex: 1 1 100%; gap: 8px; }
   .pagetabs {
     order: 1; flex-basis: 100%; min-width: 0; margin: 3px 0 0; padding-bottom: 1px;
     overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
