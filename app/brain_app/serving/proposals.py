@@ -92,6 +92,39 @@ class ReviewGate(Protocol):
     def submit(self, proposal: Proposal) -> ProposalResult: ...
 
 
+@runtime_checkable
+class Deleter(Protocol):
+    def delete(self, domain: str, slug: str) -> None: ...
+
+
+class MemoryDeleter:
+    """Records deletions without touching storage (the safe default and test double)."""
+
+    def __init__(self) -> None:
+        self.deleted: list[tuple[str, str]] = []
+
+    def delete(self, domain: str, slug: str) -> None:
+        self.deleted.append((domain, slug))
+
+
+class GcsCorpusDeleter:
+    """Deletes ``{domain}/{slug}.md`` from the corpus bucket (the live-write path's
+    inverse). Missing objects are ignored, so delete is idempotent."""
+
+    def __init__(self, bucket: str, prefix: str = "") -> None:
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+
+    def delete(self, domain: str, slug: str) -> None:
+        from google.cloud import storage
+
+        parts = [self.prefix] if self.prefix else []
+        parts += [domain, f"{slug}.md"]
+        blob = storage.Client().bucket(self.bucket).blob("/".join(parts))
+        if blob.exists():
+            blob.delete()
+
+
 class MemoryGate:
     """Records proposals without writing anything. The safe default and test gate."""
 

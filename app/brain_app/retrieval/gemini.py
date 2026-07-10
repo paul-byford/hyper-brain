@@ -50,7 +50,16 @@ class GeminiSynthesiser:
             return self._generate(prompt)
         from google import genai
 
-        client = genai.Client(vertexai=True, project=self.project, location=self.location)
+        from ..genai_retry import http_options
+
+        # Dynamic shared quota means a 429 is expected under load; the SDK rides it out
+        # with exponential backoff + jitter rather than surfacing it to the caller.
+        client = genai.Client(
+            vertexai=True,
+            project=self.project,
+            location=self.location,
+            http_options=http_options(),
+        )
         response = client.models.generate_content(model=self.model, contents=prompt)
         return response.text or ""
 
@@ -69,7 +78,25 @@ class GeminiSynthesiser:
                 gaps=[query.strip()] if query.strip() else [],
                 used_domains=[],
             )
-        text = self._call(self.build_prompt(query, results)).strip()
+        try:
+            text = self._call(self.build_prompt(query, results)).strip()
+        except Exception as exc:  # noqa: BLE001
+            from ..genai_retry import QUOTA_MESSAGE, is_quota_error
+
+            if not is_quota_error(exc):
+                raise
+            # Quota is busy even after backoff: degrade to the deterministic extractive
+            # answer (no model call) with a clear notice, so the user still gets a
+            # grounded, cited result rather than an error.
+            from .answer import ExtractiveSynthesiser
+
+            base = ExtractiveSynthesiser().synthesise(query, results)
+            return Answer(
+                text=f"{QUOTA_MESSAGE}\n\n{base.text}",
+                citations=base.citations,
+                gaps=base.gaps,
+                used_domains=base.used_domains,
+            )
         return Answer(
             text=text or _EMPTY,
             citations=results,

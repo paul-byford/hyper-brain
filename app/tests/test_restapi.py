@@ -103,3 +103,47 @@ def test_upload_lands_in_the_personal_space(client):
     )
     assert r.status_code == 200
     assert r.json()["status"] in {"proposed", "saved"}
+
+
+FRAUD_DOC = f"{FINSERV}/realtime-fraud-detection"
+
+
+def test_edit_requires_moderation(client):
+    # A finserv reader can write commons (wildcard) but is not a moderator of the finserv
+    # team domain, so editing its content is refused.
+    r = client.post(
+        "/api/edit",
+        json={"doc_id": FRAUD_DOC, "content": "hijacked"},
+        headers=_auth(_token(["finserv-eng@example.com"])),
+    )
+    assert r.status_code == 403
+
+
+def test_moderator_can_edit_a_team_document(client):
+    r = client.post(
+        "/api/edit",
+        json={"doc_id": FRAUD_DOC, "content": "# Realtime fraud detection\n\nrewritten"},
+        headers=_auth(_token(["brain-admins@example.com"])),
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "saved"
+
+
+def test_report_then_moderator_sees_and_resolves(client):
+    reader = _auth(_token(["finserv-eng@example.com"], sub="reader-1"))
+    admin = _auth(_token(["brain-admins@example.com"]))
+    assert (
+        client.post(
+            "/api/report", json={"doc_id": FRAUD_DOC, "reason": "stale"}, headers=reader
+        ).status_code
+        == 200
+    )
+    queue = client.get("/api/reports", headers=admin).json()["reports"]
+    assert any(rep["doc_id"] == FRAUD_DOC for rep in queue)
+    # The reporter, not a moderator of finserv, sees an empty queue.
+    assert client.get("/api/reports", headers=reader).json()["reports"] == []
+    resolved = client.post(
+        "/api/report/resolve", json={"doc_id": FRAUD_DOC, "remove": False}, headers=admin
+    )
+    assert resolved.status_code == 200
+    assert client.get("/api/reports", headers=admin).json()["reports"] == []

@@ -184,6 +184,9 @@ module "brain_service" {
     # The dynamic sharing overlay: per-owner files in the dedicated shares bucket.
     BRAIN_SHARES_STORE  = "gcs"
     BRAIN_SHARES_BUCKET = module.storage.shares_bucket
+    # Community moderation reports: a single object in the shares bucket.
+    BRAIN_REPORTS_STORE  = "gcs"
+    BRAIN_REPORTS_BUCKET = module.storage.shares_bucket
     # Server-side review: the brain promotes an accepted proposal in the corpus bucket
     # and runs this index Job to rebuild. Enforcement (who may accept) is in-app.
     BRAIN_INDEXER_JOB = local.indexer_job_id

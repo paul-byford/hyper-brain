@@ -36,8 +36,16 @@ from ..models import Answer, SearchResult
 from ..observability import span
 from ..retrieval import BrainIndex, ExtractiveSynthesiser, Synthesiser, answer, search
 from .attachments import AttachmentStore, MemoryAttachmentStore, safe_filename
-from .proposals import MemoryGate, ProposalResult, ReviewGate, build_proposal
+from .proposals import (
+    Deleter,
+    MemoryDeleter,
+    MemoryGate,
+    ProposalResult,
+    ReviewGate,
+    build_proposal,
+)
 from .reindex import MemoryReindexer, Reindexer
+from .reports import MemoryReportsStore, Report, ReportsStore
 from .reviewer import MemoryReviewer, Reviewer, proposal_domain
 
 # Uploaded file types we can extract text from (markdown/HTML/Word offline; PDF via
@@ -97,6 +105,16 @@ class DocumentNotFound(Exception):
     """
 
 
+class RateLimitError(Exception):
+    """The caller has exceeded the write rate limit (governance / anti-spam)."""
+
+
+# Anti-spam: a generous per-identity write budget. High enough that a large "split into
+# linked notes" (many creates in a burst) is fine, low enough to stop a flood.
+_WRITE_LIMIT = 60
+_WRITE_WINDOW = 60.0
+
+
 class BrainService:
     def __init__(
         self,
@@ -115,6 +133,8 @@ class BrainService:
         reviewer: Reviewer | None = None,
         reindexer: Reindexer | None = None,
         curator=None,
+        deleter: Deleter | None = None,
+        reports_store: ReportsStore | None = None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
@@ -156,6 +176,14 @@ class BrainService:
         from ..ingest.curate import get_curator
 
         self.curator = curator or get_curator()
+        # Removes a document from the corpus (edit-rename and delete). Defaults to the
+        # in-process recorder; the deployed brain wires the GCS corpus deleter.
+        self.deleter: Deleter = deleter or MemoryDeleter()
+        # Community moderation: reports raised against live documents (commons is
+        # open-write, so this is the counterweight). In-process by default.
+        self.reports_store: ReportsStore = reports_store or MemoryReportsStore()
+        # Per-identity write rate limit (governance): timestamps of recent writes.
+        self._write_times: dict[str, list[float]] = {}
 
     @property
     def index(self) -> BrainIndex:
@@ -261,6 +289,7 @@ class BrainService:
             "teams": buckets["team"],
             "shared_with_you": {"domains": buckets["shared"], "documents": shared_docs},
             "writable": sorted(writable_domains(identity, policy, self._shares())),
+            "moderatable": self.moderatable_domains(identity),
             "how_to": {
                 "private_note": "add_note(title, content) -> your personal space",
                 "team_document": "propose_document(domain, title, content) -> reviewed",
@@ -417,9 +446,152 @@ class BrainService:
                 source_url=source_url,
                 tags=tags,
             )
+            self._rate_limit(identity)
             result = self.note_gate.submit(proposal)  # note_gate = live corpus write
             self.reindexer.trigger()
             return result
+
+    # ---- Content lifecycle: edit / delete, and the moderation boundary -----------
+    def _rate_limit(self, identity: Identity) -> None:
+        """Cap writes per identity per minute (anti-spam) before a live write lands."""
+        now = time.monotonic()
+        key = identity.subject or "anonymous"
+        recent = [t for t in self._write_times.get(key, []) if now - t < _WRITE_WINDOW]
+        if len(recent) >= _WRITE_LIMIT:
+            raise RateLimitError(
+                f"you have hit the write limit ({_WRITE_LIMIT} per minute); please slow down"
+            )
+        recent.append(now)
+        self._write_times[key] = recent
+
+    def _can_moderate(self, identity: Identity, domain: str) -> bool:
+        """May the caller edit/delete content in this domain: the personal owner, or a
+        holder of an EXPLICIT (non-wildcard) write grant. A wildcard write (commons for
+        everyone) lets you ADD, but not edit or delete other people's content."""
+        if is_personal_domain(domain):
+            return personal_owner(domain) == identity.subject
+        principals = set(identity.principals)
+        for grant in self._policy_source().grants:
+            if (
+                grant.write
+                and grant.principal != WILDCARD
+                and grant.principal in principals
+                and domain in grant.domains
+            ):
+                return True
+        return False
+
+    def moderatable_domains(self, identity: Identity) -> list[str]:
+        """Domains the caller may edit/delete within (their personal space + any domain
+        they hold an explicit write grant on). Drives the edit/delete affordances."""
+        out: set[str] = set()
+        personal = personal_domain(identity)
+        if personal:
+            out.add(personal)
+        principals = set(identity.principals)
+        for grant in self._policy_source().grants:
+            if grant.write and grant.principal != WILDCARD and grant.principal in principals:
+                out.update(grant.domains)
+        return sorted(out)
+
+    def edit_document(
+        self,
+        identity: Identity,
+        doc_id: str,
+        *,
+        content: str,
+        title: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Overwrite an existing document (body, and optionally title/tags). Allowed for
+        the owner (personal) or a moderator (explicit write grant). Renaming writes the
+        new slug and removes the old file so there is no orphan."""
+        current = self.get_document(identity, doc_id)  # read-enforce + fetch metadata
+        domain = current["domain"]
+        if not self._can_moderate(identity, domain):
+            raise AccessError("you may only edit content you own or a domain you moderate")
+        self._rate_limit(identity)
+        new_title = (title if title is not None else current["title"]).strip() or current["title"]
+        new_tags = tags if tags is not None else current.get("tags")
+        with span(
+            "brain.edit_document",
+            **{"brain.doc_id": doc_id, "brain.principal": identity.subject},
+        ):
+            from ..ingest.pipeline import _slugify
+
+            old_slug = doc_id.rsplit("/", 1)[-1]
+            new_slug = _slugify(new_title)
+            proposal = build_proposal(
+                domain=domain,
+                title=new_title,
+                content=content,
+                author=identity.email or identity.subject,
+                tags=new_tags,
+            )
+            result = self.note_gate.submit(proposal)
+            if new_slug != old_slug:
+                self.deleter.delete(domain, old_slug)  # renamed: drop the old file
+            self.reindexer.trigger()
+            return {"status": "saved", "doc_id": f"{domain}/{new_slug}", "detail": result.detail}
+
+    def delete_document(self, identity: Identity, doc_id: str) -> dict:
+        """Delete a document. Allowed for the owner (personal) or a moderator."""
+        current = self.get_document(identity, doc_id)
+        domain = current["domain"]
+        if not self._can_moderate(identity, domain):
+            raise AccessError("you may only delete content you own or a domain you moderate")
+        with span(
+            "brain.delete_document",
+            **{"brain.doc_id": doc_id, "brain.principal": identity.subject},
+        ):
+            self.deleter.delete(domain, doc_id.rsplit("/", 1)[-1])
+            self.reports_store.resolve(doc_id)  # a deleted doc has no open flags
+            self.reindexer.trigger()
+            return {"status": "deleted", "doc_id": doc_id}
+
+    def report_document(self, identity: Identity, doc_id: str, *, reason: str) -> dict:
+        """Flag a document for moderator review. Any reader who can see it may report
+        it; the flag is stored out of band and never touches the live document."""
+        current = self.get_document(identity, doc_id)  # read-enforce
+        self.reports_store.add(
+            Report(
+                doc_id=doc_id,
+                domain=current["domain"],
+                reporter=identity.subject,
+                reason=reason.strip()[:500],
+                created_at=utc_now(),
+            )
+        )
+        return {"status": "reported", "doc_id": doc_id}
+
+    def reports_for_moderator(self, identity: Identity) -> list[dict]:
+        """Open reports in domains the caller moderates, newest first. Drives the
+        moderator queue; a caller who moderates nothing sees an empty list."""
+        moderatable = set(self.moderatable_domains(identity))
+        out = [
+            {
+                "doc_id": r.doc_id,
+                "domain": r.domain,
+                "reporter": r.reporter,
+                "reason": r.reason,
+                "created_at": r.created_at,
+            }
+            for r in self.reports_store.open_reports()
+            if r.domain in moderatable
+        ]
+        out.sort(key=lambda r: r["created_at"], reverse=True)
+        return out
+
+    def resolve_report(self, identity: Identity, doc_id: str, *, remove: bool = False) -> dict:
+        """Clear the flags on a document (dismiss), optionally removing the content.
+        Restricted to a moderator of the document's domain."""
+        current = self.get_document(identity, doc_id)  # read-enforce + domain
+        if not self._can_moderate(identity, current["domain"]):
+            raise AccessError("you may only resolve reports in a domain you moderate")
+        if remove:
+            return self.delete_document(identity, doc_id)  # also clears the flags
+        self.reports_store.resolve(doc_id)
+        return {"status": "dismissed", "doc_id": doc_id}
 
     # --- Personal notes and dynamic sharing (the overlay) ------------------------
 
@@ -452,6 +624,7 @@ class BrainService:
                 source_url=source_url,
                 tags=tags,
             )
+            self._rate_limit(identity)
             result = self.note_gate.submit(proposal)
             self.reindexer.trigger()  # make the note searchable promptly
             return result
@@ -754,6 +927,7 @@ class BrainService:
                 raise ValueError("no readable content was found at that source")
 
             curated = False
+            quota_degraded = False
             tags: list[str] = []
             if curate:
                 # Best-effort: a model error, safety block, or quota limit must never fail
@@ -761,6 +935,8 @@ class BrainService:
                 # (curated=false). A very large source is capped so it makes a smaller,
                 # faster call that is far less likely to hit the per-minute token quota;
                 # the prompt condenses it into a structured digest regardless.
+                from ..genai_retry import is_quota_error
+
                 source = body[:_CURATE_MAX_CHARS]
                 try:
                     cleaned = self.curator.curate(
@@ -769,8 +945,11 @@ class BrainService:
                     if cleaned and cleaned != source:
                         cleaned, tags = self._split_tags(cleaned)
                         body, curated = cleaned, True
-                except Exception:  # noqa: BLE001 - enhancement, never fatal to the draft
+                except Exception as exc:  # noqa: BLE001 - enhancement, never fatal to the draft
                     curated = False
+                    # Distinguish a busy-quota skip so the UI can tell the user the
+                    # AI clean-up was throttled (not that their content was bad).
+                    quota_degraded = is_quota_error(exc)
 
             title = (default_title or self._first_heading(body) or "Untitled draft").strip()[:120]
             return {
@@ -778,6 +957,7 @@ class BrainService:
                 "content": body,
                 "source_url": source_url,
                 "curated": curated,
+                "quota_degraded": quota_degraded,
                 "tags": tags,
             }
 

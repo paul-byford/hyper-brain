@@ -17,8 +17,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth import TokenError, TokenVerifier
+from ..genai_retry import QUOTA_MESSAGE, is_quota_error
 from ..models import Answer, SearchResult
-from .service import AccessError, BrainService, DocumentNotFound
+from .service import AccessError, BrainService, DocumentNotFound, RateLimitError
 
 
 def _result(result: SearchResult) -> dict:
@@ -61,10 +62,19 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
                 return await handler(request, identity)
             except DocumentNotFound:
                 return JSONResponse({"error": "not found"}, status_code=404)
+            except RateLimitError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=429)
             except AccessError as exc:
                 return JSONResponse({"error": str(exc)}, status_code=403)
             except (ValueError, KeyError) as exc:
                 return JSONResponse({"error": str(exc)}, status_code=400)
+            except Exception as exc:
+                # A Gemini quota exhaustion (429) that survived the model's backoff is a
+                # busy-demo condition, not a bug: surface it clearly with a 429 and a
+                # "quota" flag the UI styles as a degraded-experience notice.
+                if is_quota_error(exc):
+                    return JSONResponse({"error": QUOTA_MESSAGE, "quota": True}, status_code=429)
+                raise
 
         return wrapper
 
@@ -120,6 +130,41 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
             curate=bool(data.get("curate", True)),
         )
         return JSONResponse(result)
+
+    async def edit(request, identity):
+        data = await request.json()
+        tags = data.get("tags")
+        result = service.edit_document(
+            identity,
+            str(data["doc_id"]),
+            content=str(data.get("content", "")),
+            title=data.get("title"),
+            tags=[str(t) for t in tags] if isinstance(tags, list) else None,
+        )
+        return JSONResponse(result)
+
+    async def delete(request, identity):
+        data = await request.json()
+        return JSONResponse(service.delete_document(identity, str(data["doc_id"])))
+
+    async def report(request, identity):
+        data = await request.json()
+        return JSONResponse(
+            service.report_document(
+                identity, str(data["doc_id"]), reason=str(data.get("reason", ""))
+            )
+        )
+
+    async def reports(request, identity):
+        return JSONResponse({"reports": service.reports_for_moderator(identity)})
+
+    async def resolve_report(request, identity):
+        data = await request.json()
+        return JSONResponse(
+            service.resolve_report(
+                identity, str(data["doc_id"]), remove=bool(data.get("remove", False))
+            )
+        )
 
     async def simplify(request, identity):
         data = await request.json()
@@ -252,6 +297,11 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/simplify", ["POST"], simplify)
     route("/api/propose", ["POST"], propose)
     route("/api/create", ["POST"], create_document)
+    route("/api/edit", ["POST"], edit)
+    route("/api/delete", ["POST"], delete)
+    route("/api/report", ["POST"], report)
+    route("/api/reports", ["GET"], reports)
+    route("/api/report/resolve", ["POST"], resolve_report)
     route("/api/upload", ["POST"], upload)
     route("/api/share", ["POST"], share)
     route("/api/unshare", ["POST"], unshare)

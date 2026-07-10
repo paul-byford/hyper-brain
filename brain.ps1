@@ -50,6 +50,44 @@ function Invoke-Quiet([scriptblock]$Block) {
     try { & $Block } finally { $ErrorActionPreference = $previous }
 }
 
+# Deploy diagnostics: cloud steps (docker, gcloud) stream their combined output to a
+# per-run log as well as the console. In a piped or background run the native tools'
+# output would otherwise bypass the transcript, so a failure showed only a bare exit
+# code with no cause. With this, the real error is always captured and surfaced.
+$Script:DeployLog = $null
+function Start-DeployLog {
+    $dir = Join-Path $Root ".brain"
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $Script:DeployLog = Join-Path $dir ("deploy-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+    "hyper-brain deploy $(Get-Date -Format o)" | Set-Content -Path $Script:DeployLog -Encoding utf8
+    Note "Deploy log: $Script:DeployLog"
+}
+
+function Show-LogTail {
+    if ($Script:DeployLog -and (Test-Path $Script:DeployLog)) {
+        Write-Host "    Last lines of $Script:DeployLog :" -ForegroundColor DarkGray
+        Get-Content $Script:DeployLog -Tail 25 | ForEach-Object { Write-Host "    | $_" -ForegroundColor DarkGray }
+    }
+}
+
+# Run a native step (a scriptblock), streaming stdout+stderr to the console and the
+# deploy log. On a non-zero exit, print the tail of the log and its path, then exit,
+# so the real error is visible even when the run is piped or backgrounded.
+function Invoke-Step([string]$What, [scriptblock]$Block) {
+    Note $What
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        if ($Script:DeployLog) { & $Block 2>&1 | Tee-Object -FilePath $Script:DeployLog -Append }
+        else { & $Block 2>&1 }
+    } finally { $ErrorActionPreference = $previous }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: $What failed (exit code $LASTEXITCODE)." -ForegroundColor Red
+        Show-LogTail
+        exit 1
+    }
+}
+
 function Resolve-Project {
     if ($Project) { return $Project }
     if (Get-Command gcloud -ErrorAction SilentlyContinue) {
@@ -217,6 +255,7 @@ function Cmd-Up {
 
     . (Join-Path $Root "scripts\preflight.ps1")
     $proj = Invoke-BrainPreflight -Project $Project
+    Start-DeployLog
 
     # 1. State bucket (create-if-not-exists).
     Info "Bootstrapping the Terraform state bucket"
@@ -238,9 +277,9 @@ function Cmd-Up {
     $uiImage = "$repo/ui:latest"
     $py = Get-Python
     Info "Building and pushing images to $repo"
-    gcloud auth configure-docker "$Region-docker.pkg.dev" --quiet
-    docker build -t $brainImage -f (Join-Path $Root "app\Dockerfile") (Join-Path $Root "app"); if ($LASTEXITCODE -ne 0) { Die "brain image build failed" }
-    docker build -t $agentImage -f (Join-Path $Root "app\Dockerfile.agent") (Join-Path $Root "app"); if ($LASTEXITCODE -ne 0) { Die "agent image build failed" }
+    Invoke-Step "Configuring docker credentials" { gcloud auth configure-docker "$Region-docker.pkg.dev" --quiet }
+    Invoke-Step "Building brain image" { docker build -t $brainImage -f (Join-Path $Root "app\Dockerfile") (Join-Path $Root "app") }
+    Invoke-Step "Building agent image" { docker build -t $agentImage -f (Join-Path $Root "app\Dockerfile.agent") (Join-Path $Root "app") }
     # The services exist after the first apply, so bake their live URLs into the SPA:
     # the MCP endpoint (connector modal), and the OAuth issuer + REST base the live app
     # signs in against and calls.
@@ -252,14 +291,14 @@ function Cmd-Up {
     } else {
         & $py (Join-Path $Root "scripts\export_ui_data.py") --profile $ProfileName
     }
-    docker build -t $uiImage (Join-Path $Root "ui"); if ($LASTEXITCODE -ne 0) { Die "ui image build failed" }
-    foreach ($img in @($brainImage, $agentImage, $uiImage)) { docker push $img; if ($LASTEXITCODE -ne 0) { Die "push failed: $img" } }
+    Invoke-Step "Building ui image" { docker build -t $uiImage (Join-Path $Root "ui") }
+    foreach ($img in @($brainImage, $agentImage, $uiImage)) { Invoke-Step "Pushing $img" { docker push $img } }
 
     # 4. Upload the corpus so the index Job can build in-tenancy, then roll out the
     #    real images and set the brain's own URL as the OIDC audience.
     $corpusBucket = Tf-Output "corpus_bucket"
     Info "Uploading corpus to gs://$corpusBucket"
-    gcloud storage rsync -r (Join-Path $Root "corpus") "gs://$corpusBucket" --quiet
+    Invoke-Step "Syncing corpus to gs://$corpusBucket" { gcloud storage rsync -r (Join-Path $Root "corpus") "gs://$corpusBucket" --quiet }
     $brainUrl = Tf-Output "brain_url"
     $authUrl = Tf-Output "auth_url"
     $uiUrl = Tf-Output "ui_url"
@@ -271,8 +310,11 @@ function Cmd-Up {
     # 5. Build the index in-tenancy (Vertex embeddings) via the Cloud Run Job.
     $prefix = Tf-Output "name_prefix"
     Info "Running the index job (in-tenancy build to gs://$(Tf-Output 'index_bucket'))"
-    Invoke-Quiet { gcloud run jobs execute "$prefix-indexer" --project $proj --region $Region --wait 2>&1 | Out-Null }
-    if ($LASTEXITCODE -ne 0) { Note "index job did not complete; check: gcloud run jobs executions list --job $prefix-indexer" }
+    Invoke-Quiet {
+        if ($Script:DeployLog) { gcloud run jobs execute "$prefix-indexer" --project $proj --region $Region --wait 2>&1 | Tee-Object -FilePath $Script:DeployLog -Append | Out-Null }
+        else { gcloud run jobs execute "$prefix-indexer" --project $proj --region $Region --wait 2>&1 | Out-Null }
+    }
+    if ($LASTEXITCODE -ne 0) { Note "index job did not complete; see the deploy log or run: gcloud run jobs executions list --job $prefix-indexer" }
 
     # 6. Report.
     Info "Done. Your brain is live."

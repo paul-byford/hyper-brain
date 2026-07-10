@@ -26,6 +26,18 @@ def _agent_id(author: str) -> str:
     return _AGENT_ID.get(author or "", "research")
 
 
+def _error_frame(exc: Exception) -> dict:
+    """A terminal SSE payload for a failed run. A 429 that survives the model's
+    backoff-and-jitter retries means the shared Gemini quota is genuinely busy, so we
+    flag it as a quota issue (the UI styles it as a degraded-experience notice) rather
+    than showing a stack-trace-like message."""
+    from ..genai_retry import QUOTA_MESSAGE, is_quota_error
+
+    if is_quota_error(exc):
+        return {"error": QUOTA_MESSAGE, "quota": True}
+    return {"error": str(exc)}
+
+
 def _steps_for_call(author: str, name: str, args: dict) -> list[dict]:
     """Animation steps for one real tool call by one agent."""
     if name == "transfer_to_agent":
@@ -130,19 +142,37 @@ def _bound_tools(service: BrainService, identity: Identity):
     }
 
 
+def _model(model: str):
+    """Wrap the model name in an ADK ``Gemini`` carrying the shared retry policy, so the
+    agent's own Gemini calls ride out a 429 (dynamic shared quota) with exponential
+    backoff and jitter instead of failing the run. Falls back to a plain model name on
+    an older ADK that lacks ``retry_options``, so the agent still runs (just without the
+    extra backoff), rather than failing to build."""
+    from google.adk.models import Gemini
+
+    from ..genai_retry import retry_options
+
+    try:
+        return Gemini(model=model, retry_options=retry_options())
+    except (TypeError, ValueError):
+        return model
+
+
 def _build_team(service: BrainService, identity: Identity, model: str):
     from google.adk.agents import LlmAgent
 
     tools = _bound_tools(service, identity)
+    # One retry-configured model instance, shared across the three agents.
+    llm = _model(model)
     researcher = LlmAgent(
-        name="researcher", model=model, instruction=prompt("researcher"), tools=tools["researcher"]
+        name="researcher", model=llm, instruction=prompt("researcher"), tools=tools["researcher"]
     )
     curator = LlmAgent(
-        name="curator", model=model, instruction=prompt("curator"), tools=tools["curator"]
+        name="curator", model=llm, instruction=prompt("curator"), tools=tools["curator"]
     )
     return LlmAgent(
         name="brain_agent",
-        model=model,
+        model=llm,
         instruction=prompt("coordinator"),
         sub_agents=[researcher, curator],
     )
@@ -231,7 +261,7 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
                     answer = part.text
                     final_author = author
     except Exception as exc:  # a run failure becomes a clean terminal frame, not a hang
-        yield _sse({"error": str(exc)})
+        yield _sse(_error_frame(exc))
         return
 
     dest = _agent_id(final_author)

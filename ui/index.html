@@ -122,6 +122,10 @@
 
       <section class="panel">
         <header><h2>Domains &amp; documents</h2></header>
+        <div class="browsefilter" id="browsefilter" hidden>
+          <div class="bf-row"><span class="bf-lbl">Domain</span><span class="bf-chips" id="bfdomains"></span></div>
+          <div class="bf-row" id="bftagsrow" hidden><span class="bf-lbl">Tag</span><span class="bf-chips" id="bftags"></span></div>
+        </div>
         <div class="body" id="browser"></div>
       </section>
 
@@ -323,7 +327,7 @@
         </div>
       </section>
       <section class="panel studiodraft" id="studiodraft" hidden>
-        <header><h2>Draft</h2><span class="draftcurated mono" id="draftcurated" hidden>✦ AI-curated</span></header>
+        <header><h2>Draft</h2><span class="draftcurated mono" id="draftcurated" hidden>✦ AI-curated</span><span class="draftquota mono" id="draftquota" hidden>⚠ AI clean-up skipped (Gemini quota busy)</span></header>
         <div class="body" id="draftbody">
           <div id="draftsingle">
             <input id="drafttitle" class="drafttitle" placeholder="Draft title" />
@@ -373,6 +377,15 @@
       <p>Documents proposed into <b>team domains you can write</b>. Accepting one promotes it into the live domain and rebuilds the index; it becomes searchable within a few minutes. You only see proposals in domains you may approve.</p>
     </div>
     <div id="reviewlist" class="reviewlist"></div>
+
+    <div id="reportsection" hidden>
+      <div class="sechead" style="margin-top:26px">
+        <span class="eyebrow">Reported content</span>
+        <h3>Flags raised in domains you moderate</h3>
+        <p>Anyone can flag a document they can see. Dismiss a flag if the content is fine, or remove the document to take it down and rebuild the index. You only see flags in domains you own or moderate.</p>
+      </div>
+      <div id="reportlist" class="reviewlist"></div>
+    </div>
   </div>
 
   <div class="page" id="page-arch" hidden>

@@ -319,8 +319,10 @@ def _load_service() -> BrainService:
     from ..embeddings import get_embeddings
     from ..retrieval import BrainIndex, get_synthesiser
     from .attachments import get_attachment_store
-    from .proposals import GcsCorpusGate, MemoryGate, get_gate
+    from .modelcache import CachingEmbeddings, CachingSynthesiser
+    from .proposals import GcsCorpusDeleter, GcsCorpusGate, MemoryDeleter, MemoryGate, get_gate
     from .reindex import get_reindexer
+    from .reports import get_reports_store
     from .reviewer import get_reviewer
 
     index_path = os.environ.get("BRAIN_INDEX", ".brain/index.json")
@@ -331,20 +333,29 @@ def _load_service() -> BrainService:
     # configured; otherwise they are recorded in-process (the safe local default).
     corpus_bucket = os.environ.get("BRAIN_CORPUS_BUCKET")
     note_gate = GcsCorpusGate(corpus_bucket) if corpus_bucket else MemoryGate()
+    deleter = GcsCorpusDeleter(corpus_bucket) if corpus_bucket else MemoryDeleter()
+    # Cache the two repeating model calls (query embedding, composed answer) so a
+    # re-asked question serves from memory with no Vertex call: fewer calls, fewer 429s
+    # under load, and no quota increase. The caches are per-instance and clear on a cold
+    # start, so they never serve stale content across a redeploy or reindex.
+    embeddings = CachingEmbeddings(get_embeddings())
+    synthesiser = CachingSynthesiser(get_synthesiser())
     return BrainService(
         None,
-        get_embeddings(),
+        embeddings,
         source(),
         gate=get_gate(),
-        synthesiser=get_synthesiser(),
+        synthesiser=synthesiser,
         policy_source=source,
         # Lazy: the container starts before the index exists; loaded on first query.
         index_loader=lambda: BrainIndex.load(index_path),
         shares_store=get_shares_store(),
         note_gate=note_gate,
+        deleter=deleter,
         attachment_store=get_attachment_store(),
         reviewer=get_reviewer(),
         reindexer=get_reindexer(),
+        reports_store=get_reports_store(),
     )
 
 

@@ -96,40 +96,29 @@ class GeminiCurator:
     def _call(self, prompt: str) -> str:
         if self._generate is not None:
             return self._generate(prompt)
-        import time
-
         from google import genai
         from google.genai import types
 
-        # Bound the call so a throttled/slow model fails fast. Thinking is off: a rewrite
-        # needs none, and it roughly halves the tokens spent, easing the Vertex quota.
+        from ..genai_retry import http_options
+
+        # Bound the call so a throttled/slow model fails fast, and ride out the per-minute
+        # quota (429 RESOURCE_EXHAUSTED) with the shared exponential-backoff-with-jitter
+        # retry. If it still fails, make_draft falls back to the un-curated text rather
+        # than erroring. Thinking is off: a rewrite needs none, and it roughly halves the
+        # tokens spent, easing the Vertex quota in the first place.
         client = genai.Client(
             vertexai=True,
             project=self.project,
             location=self.location,
-            http_options=types.HttpOptions(timeout=60000),
+            http_options=http_options(60000),
         )
         config = types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=8192,
             thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
-        # A short retry rides out the per-minute quota (429 RESOURCE_EXHAUSTED); if it
-        # still fails, make_draft falls back to the un-curated text rather than erroring.
-        last: Exception | None = None
-        for attempt in range(3):
-            try:
-                resp = client.models.generate_content(
-                    model=self.model, contents=prompt, config=config
-                )
-                return resp.text or ""
-            except Exception as exc:  # noqa: BLE001
-                last = exc
-                if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                raise
-        raise last if last else RuntimeError("curation failed")
+        resp = client.models.generate_content(model=self.model, contents=prompt, config=config)
+        return resp.text or ""
 
     def curate(self, doc: ParsedDoc, known_titles: list[str] | None = None) -> ParsedDoc:
         parts = [_CURATE_INSTRUCTION]

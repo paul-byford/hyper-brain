@@ -49,7 +49,7 @@ function withAlpha(hex, a) {
 let index = null, policy = null, config = {};
 let AGENTS = null, AGENTSEL = null; // agent/model/prompt manifest + selected agent id
 let DOMAIN_ORDER = [], domIdx = new Map(), byId = new Map(), PRINCIPALS = [];
-const state = { principal: null, allowed: new Set(), openDoc: null, openDocNode: null, query: "", mode: "explore" };
+const state = { principal: null, allowed: new Set(), openDoc: null, openDocNode: null, openDocData: null, query: "", mode: "explore", browseDomain: null, browseTag: null };
 
 // A sorted domain -> categorical colour slot (1..6), used for dots and nodes.
 const domVar = (domain) => `--domain-${((domIdx.get(domain) || 0) % 6) + 1}`;
@@ -305,25 +305,112 @@ function renderLiveResults(box, docs, ans, withAnswer) {
   box.querySelectorAll("[data-doc]").forEach((a) => a.addEventListener("click", () => openDocument(a.dataset.doc)));
 }
 
+// May the signed-in caller edit/delete content in this domain? Mirrors the server's
+// _can_moderate: their personal space, or a domain they hold an explicit write grant
+// on. A wildcard commons write lets you add, but not moderate others' content.
+function canModerate(domain) {
+  return LIVE && ME && (ME.moderatable || []).includes(domain);
+}
 async function renderDocLive(d) {
   const el = $("#doc");
   el.innerHTML = '<p class="placeholder">loading…</p>';
   try {
     const doc = await API.document(d.doc_id);
-    const blocks = String(doc.text || "").split("\n\n").map((b) => {
-      if (b.startsWith("## ")) return `<h4>${esc(b.slice(3))}</h4>`;
-      if (b.startsWith("# ")) return `<h3>${esc(b.slice(2))}</h3>`;
-      return `<p>${esc(stripWiki(b))}</p>`;
-    });
-    const tags = (doc.tags && doc.tags.length)
-      ? `<div class="chips" style="margin:2px 0 10px">${doc.tags.map((t) => `<span class="chip tag">#${esc(t)}</span>`).join("")}</div>` : "";
-    let prov = `<div class="provenance"><span class="dot" style="background:var(${domVar(doc.domain)})"></span>${esc(doc.domain)}`;
-    if (doc.source) prov += ` · source: ${esc(doc.source)}`;
-    if (doc.fetched_at) prov += ` · fetched ${esc(doc.fetched_at)}`;
-    prov += "</div>";
-    el.innerHTML = `<article><h3>${esc(doc.title)}</h3>${tags}${blocks.slice(1).join("")}${prov}</article>`;
+    state.openDocData = doc;
+    renderDocArticle(doc);
   } catch (e) {
     el.innerHTML = `<p class="placeholder">${esc(e.message || String(e))}</p>`;
+  }
+}
+function renderDocArticle(doc) {
+  const el = $("#doc");
+  const blocks = String(doc.text || "").split("\n\n").map((b) => {
+    if (b.startsWith("## ")) return `<h4>${esc(b.slice(3))}</h4>`;
+    if (b.startsWith("# ")) return `<h3>${esc(b.slice(2))}</h3>`;
+    return `<p>${esc(stripWiki(b))}</p>`;
+  });
+  const tags = (doc.tags && doc.tags.length)
+    ? `<div class="chips" style="margin:2px 0 10px">${doc.tags.map((t) => `<span class="chip tag">#${esc(t)}</span>`).join("")}</div>` : "";
+  let prov = `<div class="provenance"><span class="dot" style="background:var(${domVar(doc.domain)})"></span>${esc(doc.domain)}`;
+  if (doc.source) prov += ` · source: ${esc(doc.source)}`;
+  if (doc.fetched_at) prov += ` · fetched ${esc(doc.fetched_at)}`;
+  prov += "</div>";
+  let bar = "";
+  if (canModerate(doc.domain)) {
+    bar = `<div class="docmod"><button type="button" id="docedit" class="modbtn">Edit</button><button type="button" id="docdelete" class="modbtn danger">Delete</button></div>`;
+  } else if (LIVE) {
+    // A reader who does not moderate this domain can still flag it for review.
+    bar = `<div class="docmod"><button type="button" id="docreport" class="modbtn">Report</button></div>`;
+  }
+  // A just-saved edit is shown optimistically before the index catches up.
+  const pending = doc._pending
+    ? `<div class="docpending">✎ Showing your saved edit · indexing now, searchable in a few minutes</div>` : "";
+  el.innerHTML = `<article>${bar}<h3>${esc(doc.title)}</h3>${pending}${tags}${blocks.slice(1).join("")}${prov}</article>`;
+  const eb = $("#docedit"); if (eb) eb.addEventListener("click", () => renderDocEditor(doc));
+  const db = $("#docdelete"); if (db) db.addEventListener("click", () => deleteOpenDoc(doc));
+  const rb = $("#docreport"); if (rb) rb.addEventListener("click", () => reportOpenDoc(doc));
+}
+async function reportOpenDoc(doc) {
+  const reason = window.prompt(`Flag “${doc.title}” for a moderator. Briefly, what is the problem?`, "");
+  if (reason === null) return; // cancelled
+  const btn = $("#docreport"); if (btn) { btn.disabled = true; btn.textContent = "Reporting…"; }
+  try {
+    await API.report(doc.doc_id, reason);
+    if (btn) { btn.textContent = "Reported"; }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Report"; }
+    window.alert(e.message || String(e));
+  }
+}
+function renderDocEditor(doc) {
+  const el = $("#doc");
+  const tagStr = (doc.tags || []).join(", ");
+  el.innerHTML = `<div class="doceditor">
+    <label class="editlbl">Title</label>
+    <input id="editttl" class="editinput" value="${esc(doc.title)}">
+    <label class="editlbl">Content</label>
+    <textarea id="editbody" class="editarea" spellcheck="false">${esc(doc.text || "")}</textarea>
+    <label class="editlbl">Tags <span class="edithint">comma separated</span></label>
+    <input id="edittags" class="editinput" value="${esc(tagStr)}">
+    <div class="editactions"><button type="button" id="editsave" class="modbtn primary">Save</button><button type="button" id="editcancel" class="modbtn">Cancel</button></div>
+    <div id="editresult" class="editresult"></div>
+  </div>`;
+  $("#editcancel").addEventListener("click", () => renderDocArticle(doc));
+  $("#editsave").addEventListener("click", () => saveOpenDoc(doc));
+}
+async function saveOpenDoc(doc) {
+  const title = $("#editttl").value.trim() || doc.title;
+  const content = $("#editbody").value;
+  const tags = $("#edittags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  const btn = $("#editsave"); btn.disabled = true;
+  $("#editresult").textContent = "Saving…";
+  try {
+    const res = await API.edit({ doc_id: doc.doc_id, content, title, tags });
+    state.openDoc = res.doc_id || doc.doc_id;
+    await reloadLiveDocs("Saved. Reindexing now, changes searchable in a few minutes.");
+    idxExtraPending += 1; renderIndexStatus();
+    // Show the edit the user just submitted, not the index's old copy (the rebuild
+    // takes a few minutes). Provenance fields carry over from the original; a pending
+    // marker tells the user the view is their edit, awaiting the reindex.
+    const optimistic = { ...doc, doc_id: state.openDoc, title, text: content, tags, _pending: true };
+    state.openDocData = optimistic;
+    renderDocArticle(optimistic);
+  } catch (e) {
+    btn.disabled = false;
+    $("#editresult").textContent = e.message || String(e);
+  }
+}
+async function deleteOpenDoc(doc) {
+  if (!window.confirm(`Delete “${doc.title}”? This cannot be undone.`)) return;
+  try {
+    await API.remove(doc.doc_id);
+    state.openDoc = null; state.openDocData = null;
+    await reloadLiveDocs(`Deleted “${doc.title}”. Reindexing now.`);
+    idxExtraPending += 1; renderIndexStatus();
+    renderDoc(); renderBrowser(); setMode("explore");
+  } catch (e) {
+    const r = $("#editresult") || $("#doc");
+    if (r) r.innerHTML = `<p class="placeholder">${esc(e.message || String(e))}</p>`;
   }
 }
 
@@ -453,6 +540,54 @@ async function renderReview() {
       card.appendChild(btn); box.appendChild(card);
     }
   } catch (e) {
+    box.innerHTML = `<p class="empty">${esc(e.message || String(e))}</p>`;
+  }
+  renderReports();
+}
+
+// The moderator's flag queue: reports raised against content in domains they own or
+// moderate. Only shown when the caller actually moderates something.
+async function renderReports() {
+  const sec = $("#reportsection"), box = $("#reportlist");
+  if (!sec || !box) return;
+  const pd = ME && ME.personal && ME.personal.domain;
+  // Moderating a shared domain (team/commons) is what makes the queue meaningful:
+  // no one but the owner can see personal content, so it never gets reported.
+  const modShared = (ME && ME.moderatable || []).filter((d) => d !== pd);
+  box.innerHTML = '<p class="empty">loading…</p>';
+  try {
+    const reports = await API.reports();
+    // Show the section for a domain moderator, or whenever any flag is actually open.
+    if (!modShared.length && !reports.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    if (!reports.length) { box.innerHTML = '<p class="empty">No open flags. Nothing to moderate.</p>'; return; }
+    box.innerHTML = "";
+    for (const r of reports) {
+      const card = document.createElement("div"); card.className = "reviewcard";
+      const reason = r.reason ? `<span class="rc-reason">“${esc(r.reason)}”</span>` : "";
+      card.innerHTML = `<div class="rc-main"><span class="kindbadge kind-team">${esc(r.domain)}</span>
+        <button class="rc-name mono rc-open" data-doc="${esc(r.doc_id)}">${esc(short(r.doc_id))}</button>${reason}</div>`;
+      const acts = document.createElement("div"); acts.className = "rc-acts";
+      const dismiss = document.createElement("button"); dismiss.className = "modbtn"; dismiss.textContent = "Dismiss";
+      const remove = document.createElement("button"); remove.className = "modbtn danger"; remove.textContent = "Remove";
+      const done = (label) => { card.innerHTML = `<div class="rc-main"><span class="kindbadge kind-team">${esc(r.domain)}</span> <span class="rc-name mono">${label}</span></div>`; };
+      dismiss.addEventListener("click", async () => {
+        dismiss.disabled = remove.disabled = true;
+        try { await API.resolveReport(r.doc_id, false); done("flag dismissed"); }
+        catch (e) { dismiss.disabled = remove.disabled = false; acts.insertAdjacentHTML("beforeend", `<span class="rc-err">${esc(e.message || String(e))}</span>`); }
+      });
+      remove.addEventListener("click", async () => {
+        if (!window.confirm(`Remove “${short(r.doc_id)}”? This deletes the document.`)) return;
+        dismiss.disabled = remove.disabled = true;
+        try { await API.resolveReport(r.doc_id, true); done("removed · reindexing"); reloadLiveDocs(); }
+        catch (e) { dismiss.disabled = remove.disabled = false; acts.insertAdjacentHTML("beforeend", `<span class="rc-err">${esc(e.message || String(e))}</span>`); }
+      });
+      acts.appendChild(dismiss); acts.appendChild(remove); card.appendChild(acts); box.appendChild(card);
+    }
+    box.querySelectorAll(".rc-open").forEach((a) => a.addEventListener("click", () => { openDocument(a.dataset.doc); setPage("explore"); }));
+  } catch (e) {
+    if (!modShared.length) { sec.hidden = true; return; } // don't surface errors to non-moderators
+    sec.hidden = false;
     box.innerHTML = `<p class="empty">${esc(e.message || String(e))}</p>`;
   }
 }
@@ -739,11 +874,57 @@ function kindOf(dom) {
 }
 
 // ---- Domain browser ---------------------------------------------------------
+// A filter bar sits above the browser: pick a single domain, and (once a domain is
+// chosen) narrow further by a tag present in that domain. Both default to "All".
+function renderBrowseFilter() {
+  const bar = $("#browsefilter"); if (!bar) return;
+  const visDomains = DOMAIN_ORDER.filter((d) => state.allowed.has(d));
+  // Drop a selection that is no longer visible (e.g. after a delete/reindex).
+  if (state.browseDomain && !visDomains.includes(state.browseDomain)) state.browseDomain = null;
+  if (!visDomains.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const domBox = $("#bfdomains"); domBox.innerHTML = "";
+  const mkChip = (label, active, onClick, dom) => {
+    const c = document.createElement("button");
+    c.className = "bfchip" + (active ? " on" : "");
+    if (dom) { const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = `var(${domVar(dom)})`; c.appendChild(dot); }
+    c.appendChild(document.createTextNode(label));
+    c.addEventListener("click", onClick);
+    return c;
+  };
+  domBox.appendChild(mkChip("All", !state.browseDomain, () => { state.browseDomain = null; state.browseTag = null; renderBrowseFilter(); renderBrowser(); }));
+  for (const dom of visDomains) {
+    domBox.appendChild(mkChip(dom, state.browseDomain === dom, () => { state.browseDomain = dom; state.browseTag = null; renderBrowseFilter(); renderBrowser(); }, dom));
+  }
+  // Tags: only meaningful once scoped to a domain (tag names are not domain-unique).
+  const tagsRow = $("#bftagsrow"), tagBox = $("#bftags");
+  const scope = state.browseDomain
+    ? index.documents.filter((d) => d.domain === state.browseDomain)
+    : [];
+  const tagCounts = new Map();
+  for (const d of scope) for (const t of (d.tags || [])) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+  if (state.browseTag && !tagCounts.has(state.browseTag)) state.browseTag = null;
+  const tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 24);
+  if (!tags.length) { tagsRow.hidden = true; }
+  else {
+    tagsRow.hidden = false; tagBox.innerHTML = "";
+    tagBox.appendChild(mkChip("All", !state.browseTag, () => { state.browseTag = null; renderBrowseFilter(); renderBrowser(); }));
+    for (const [t, n] of tags) {
+      tagBox.appendChild(mkChip(`#${t} ${n}`, state.browseTag === t, () => { state.browseTag = t; renderBrowseFilter(); renderBrowser(); }));
+    }
+  }
+}
 function renderBrowser() {
+  renderBrowseFilter();
   const el = $("#browser"); el.innerHTML = "";
   let any = false;
   for (const dom of DOMAIN_ORDER) {
     if (!state.allowed.has(dom)) continue;
+    if (state.browseDomain && dom !== state.browseDomain) continue;
+    const docs = index.documents
+      .filter((d) => d.domain === dom && (!state.browseTag || (d.tags || []).includes(state.browseTag)))
+      .sort((a, b) => a.title.localeCompare(b.title));
+    if (!docs.length) continue; // an empty group (after tag filtering) is noise
     any = true;
     const g = document.createElement("div"); g.className = "domgroup";
     const lab = document.createElement("div"); lab.className = "glabel";
@@ -756,7 +937,6 @@ function renderBrowser() {
     lab.appendChild(badge);
     g.appendChild(lab);
     const ul = document.createElement("ul"); ul.className = "doclist";
-    const docs = index.documents.filter((d) => d.domain === dom).sort((a, b) => a.title.localeCompare(b.title));
     for (const d of docs) {
       const li = document.createElement("li");
       const b = document.createElement("button");
@@ -770,7 +950,11 @@ function renderBrowser() {
     }
     g.appendChild(ul); el.appendChild(g);
   }
-  if (!any) el.innerHTML = '<p class="empty">nothing visible to this identity</p>';
+  if (!any) {
+    el.innerHTML = (state.browseTag || state.browseDomain)
+      ? '<p class="empty">No documents match this filter.</p>'
+      : '<p class="empty">nothing visible to this identity</p>';
+  }
 }
 function renderLegend() {
   const el = $("#legend"); el.innerHTML = "";
@@ -1385,7 +1569,7 @@ let aScenario = "ask", aStep = 0, aT = 0;
 // Live mode: real events arrive over SSE and queue up; each animates as it fires, so
 // you watch the actual run unfold. Demo mode loops the scripted scenarios.
 let aMode = "demo";
-let aQueue = [], aCur = null, aStreamDone = false, aLiveAnswer = "", aAnswerShown = false;
+let aQueue = [], aCur = null, aStreamDone = false, aLiveAnswer = "", aAnswerShown = false, aQuota = false;
 let aStepNo = 0; // count of live steps shown so far (for numbering the caption)
 let aFiring = false; // submitted, awaiting the first real event: pulse the You box
 
@@ -1564,12 +1748,13 @@ function agentsLoop() {
 function showLiveAnswer() {
   aAnswerShown = true;
   const body = $("#agentanswerbody"); if (body) body.textContent = aLiveAnswer;
-  const el = $("#agentanswer"); if (el) el.hidden = false;
+  const el = $("#agentanswer");
+  if (el) { el.hidden = false; el.classList.toggle("quota", aQuota); }
 }
 function resetLiveAgent() {
-  aMode = "demo"; aQueue = []; aCur = null; aStreamDone = false; aLiveAnswer = ""; aAnswerShown = false;
+  aMode = "demo"; aQueue = []; aCur = null; aStreamDone = false; aLiveAnswer = ""; aAnswerShown = false; aQuota = false;
   aStepNo = 0; aFiring = false;
-  const el = $("#agentanswer"); if (el) el.hidden = true;
+  const el = $("#agentanswer"); if (el) { el.hidden = true; el.classList.remove("quota"); }
   const body = $("#agentanswerbody"); if (body) body.textContent = "";
 }
 function setScenario(name) {
@@ -1582,7 +1767,7 @@ function setScenario(name) {
 // One SSE frame from the live run: a step to animate, the final answer, or an error.
 function handleAgentEvent(msg) {
   if (msg.step && msg.step.edge) aQueue.push({ a: msg.step.edge[0], b: msg.step.edge[1], cap: msg.step.caption || "" });
-  if (msg.error) { aStreamDone = true; aLiveAnswer = "Error: " + msg.error; }
+  if (msg.error) { aStreamDone = true; aQuota = !!msg.quota; aLiveAnswer = (msg.quota ? "" : "Error: ") + msg.error; }
   if (msg.done) { aStreamDone = true; aLiveAnswer = msg.answer || "(no answer returned)"; }
 }
 // Phase 3: stream the real ADK run over SSE and light each edge as its event fires.
@@ -1801,6 +1986,10 @@ function openDraft(draft) {
     src.innerHTML = `Source: <a href="${esc(draft.source_url)}" target="_blank" rel="noopener">${esc(draft.source_url)}</a>`;
   } else src.hidden = true;
   $("#draftcurated").hidden = !draft.curated;
+  // Tell the user when the AI clean-up was throttled by quota (content is the raw
+  // extract, not that their source was unusable), so a degraded draft is explained.
+  $("#draftquota").hidden = !draft.quota_degraded;
+  if (draft.quota_degraded) studioMsg("Gemini's shared quota is busy, so this draft is the raw extract without AI clean-up. You can still edit and create it, or retry in a moment.");
   renderDraftTargets();
   renderDraftPreview();
   updateSplitVisibility();

@@ -35,6 +35,12 @@ export const api = (apiUrl) => ({
   simplify: (text) => call(apiUrl, "/api/simplify", { method: "POST", body: { text } }),
   propose: (payload) => call(apiUrl, "/api/propose", { method: "POST", body: payload }),
   create: (payload) => call(apiUrl, "/api/create", { method: "POST", body: payload }),
+  edit: (payload) => call(apiUrl, "/api/edit", { method: "POST", body: payload }),
+  remove: (doc_id) => call(apiUrl, "/api/delete", { method: "POST", body: { doc_id } }),
+  report: (doc_id, reason) => call(apiUrl, "/api/report", { method: "POST", body: { doc_id, reason } }),
+  reports: () => call(apiUrl, "/api/reports").then((d) => d.reports),
+  resolveReport: (doc_id, remove) =>
+    call(apiUrl, "/api/report/resolve", { method: "POST", body: { doc_id, remove } }),
   shares: () => call(apiUrl, "/api/shares"),
   share: (payload) => call(apiUrl, "/api/share", { method: "POST", body: payload }),
   unshare: (payload) => call(apiUrl, "/api/unshare", { method: "POST", body: payload }),

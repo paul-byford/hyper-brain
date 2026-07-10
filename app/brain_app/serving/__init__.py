@@ -23,6 +23,7 @@ from .service import (
     BrainService,
     DocumentNotFound,
     DomainNotAuthorized,
+    RateLimitError,
     WriteScopeError,
 )
 
@@ -37,6 +38,7 @@ __all__ = [
     "MemoryGate",
     "Proposal",
     "ProposalResult",
+    "RateLimitError",
     "ReviewGate",
     "WriteScopeError",
     "get_gate",
