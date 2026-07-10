@@ -77,6 +77,7 @@
       </div>
       <div class="hashchip"><span class="livedot"></span> index <b id="hash">52aaa08ce4ae</b> · <span id="doccount">12</span> docs</div>
       <div class="userchip" id="userchip" hidden><span class="dot personal-dot"></span><span id="username"></span><button class="ghostbtn tiny" id="signout">Sign out</button></div>
+      <button class="tourbtn" id="starttour" title="Replay the guided tour"><span class="tourbtn-i" aria-hidden="true">◇</span> <span class="tourbtn-t">Guided tour</span></button>
       <button class="themetgl" id="theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
     </div>
   </div>
@@ -666,6 +667,22 @@
     </div>
   </div>
 </div>
+
+  <!-- Guided tour overlay: a spotlight backdrop + a positioned coach card -->
+  <div class="tour" id="tour" hidden>
+    <div class="tour-hole" id="tourhole"></div>
+    <div class="tour-card" id="tourcard" role="dialog" aria-modal="true" aria-label="Guided tour">
+      <div class="tour-eyebrow"><span id="tourstep">1 / 1</span><button class="tour-x" id="tourclose" aria-label="End tour">✕ end tour</button></div>
+      <h3 id="tourtitle"></h3>
+      <div class="tour-body" id="tourbody"></div>
+      <div class="tour-why" id="tourwhy" hidden></div>
+      <div class="tour-nav">
+        <button class="tour-btn ghost" id="tourback">Back</button>
+        <div class="tour-dots" id="tourdots"></div>
+        <button class="tour-btn primary" id="tournext">Next</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>

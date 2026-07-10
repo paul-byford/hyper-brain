@@ -904,3 +904,49 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .evalassertk { color: var(--signal); text-transform: uppercase; letter-spacing: .06em; font-size: 9.5px; margin-right: 4px; }
 .evalpaid { font-size: 11px; color: var(--muted); line-height: 1.5; }
 @media (max-width: 720px) { .evalsuites { grid-template-columns: 1fr; } }
+
+/* ============================ Guided tour ================================= */
+/* A spotlight backdrop: the #tourhole is a transparent box over the target that
+   casts a huge dimming shadow across the rest of the viewport, plus a gold ring. */
+.tour { position: fixed; inset: 0; z-index: 10000; --tour-dim: rgba(7, 6, 3, 0.66); }
+.tour[hidden] { display: none; }
+.tour.notarget { background: var(--tour-dim); }
+.tour-hole {
+  position: fixed; top: 0; left: 0; width: 0; height: 0; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 9999px var(--tour-dim), 0 0 0 2px color-mix(in srgb, var(--signal) 60%, transparent);
+  transition: top .55s cubic-bezier(.22, .61, .36, 1), left .55s cubic-bezier(.22, .61, .36, 1), width .55s cubic-bezier(.22, .61, .36, 1), height .55s cubic-bezier(.22, .61, .36, 1);
+}
+.tour-card {
+  position: fixed; z-index: 10001; right: 18px; bottom: 18px; width: min(348px, calc(100vw - 24px)); max-height: calc(100vh - 36px); overflow: auto;
+  background: var(--panel); border: 1px solid var(--hair); border-radius: 11px; padding: 13px 16px 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .32), var(--shadow);
+}
+.tour-eyebrow { display: flex; align-items: center; justify-content: space-between; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.tour-x { background: none; border: none; color: var(--muted); cursor: pointer; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 0; }
+.tour-x:hover { color: var(--ink); }
+.tour-card h3 { margin: 7px 0 5px; font-size: 15.5px; letter-spacing: -.01em; color: var(--ink); text-wrap: balance; }
+.tour-body { font-size: 12.5px; line-height: 1.52; color: color-mix(in srgb, var(--ink) 85%, var(--muted)); }
+.tour-body b { color: var(--ink); font-weight: 650; }
+.tour-why { margin-top: 9px; padding: 7px 11px; border-left: 2px solid color-mix(in srgb, var(--signal) 55%, var(--hair)); background: color-mix(in srgb, var(--signal) 8%, transparent); border-radius: 0 6px 6px 0; font-size: 11.5px; line-height: 1.48; color: var(--muted); }
+.tour-why[hidden] { display: none; }
+.tour-whylbl { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .11em; text-transform: uppercase; color: var(--signal-ink); margin-bottom: 2px; }
+.tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.tour-dots { display: flex; gap: 5px; flex-wrap: wrap; max-width: 160px; justify-content: center; }
+.tour-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hair); transition: background .2s, transform .2s; }
+.tour-dot.on { background: var(--signal); transform: scale(1.25); }
+.tour-btn { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 8px 15px; border-radius: 6px; cursor: pointer; border: 1px solid var(--hair); }
+.tour-btn.ghost { background: transparent; color: var(--muted); }
+.tour-btn.ghost:hover { color: var(--ink); border-color: var(--faint); }
+.tour-btn.ghost:disabled { opacity: .38; cursor: default; }
+.tour-btn.primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.tour-btn.primary:hover { filter: brightness(1.08); }
+
+/* Top-bar trigger */
+.tourbtn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--signal-ink); background: color-mix(in srgb, var(--signal) 9%, transparent); border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hair)); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+.tourbtn:hover { background: color-mix(in srgb, var(--signal) 16%, transparent); color: var(--ink); }
+.tourbtn-i { font-size: 11px; }
+@media (max-width: 680px) { .tourbtn { padding: 5px 9px; } .tourbtn .tourbtn-t { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-hole, .tour-card { transition: none; }
+}

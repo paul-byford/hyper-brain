@@ -180,6 +180,7 @@ async function bootDemo() {
   loop();
   setPage("connect"); // Connections is the default page
   hideBoot();
+  maybeAutostartTour();
 }
 
 // Signed-in live mode: render from the per-user data loadLive() already fetched
@@ -230,6 +231,7 @@ async function bootLive(me, docs) {
   startLivePoll(); // keep this tab current (picks up content added anywhere)
   ensureIdxTicker(); // live "indexing…" status while added content is pending
   setPage("connect"); // Open on the Overview tab.
+  maybeAutostartTour();
 }
 
 // ---- Live-mode search (REST-backed) -----------------------------------------
@@ -2429,6 +2431,11 @@ function wireStatic() {
       if (e.target.matches("[data-close]") || e.target.classList.contains("modal-backdrop")) m.hidden = true;
     });
   }
+  // Guided tour: trigger + controls.
+  $("#starttour").addEventListener("click", startTour);
+  $("#tournext").addEventListener("click", tourNext);
+  $("#tourback").addEventListener("click", tourBack);
+  $("#tourclose").addEventListener("click", () => endTour(false));
   document.querySelectorAll(".copybtn").forEach((b) => b.addEventListener("click", () => {
     const el = document.querySelector(b.dataset.copy); if (!el) return;
     const text = el.textContent;
@@ -2454,6 +2461,206 @@ function wireStatic() {
   });
 
   window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); if (agentsActive) agentsResize(); });
+}
+
+// ============================================================================
+//  Guided tour: a replayable, spotlighted walkthrough that onboards a new user
+//  to the product, how it is built, and how to use each feature. Each step names
+//  a page to sit on, an element to spotlight, and both a "how" and a "why".
+// ============================================================================
+const TOUR = [
+  {
+    page: "connect",
+    title: "Welcome to Hyper Brain",
+    body: "Hyper Brain is your company's shared memory: an enterprise-grade, hyperscaler-native tool for <b>curating the context</b> your teams and your AI rely on. This short tour covers what it does, how it is built, and how to use it. Use <b>Next</b> or the arrow keys, and press <b>Esc</b> to leave.",
+    why: "Most context tools are built for a single operator. Hyper Brain is built for teams: shared, governed, and running inside your own cloud.",
+  },
+  {
+    page: "connect", target: ".flowpanel",
+    title: "One governed brain",
+    body: "Knowledge flows <b>in</b> from connectors, through one governed brain, and back <b>out</b> to every surface that needs it. There is a single source of truth, not a dozen copies drifting apart across tools.",
+    why: "One governed centre is one place to secure, audit and improve. Every surface gets better the moment you add a source, with nothing to re-integrate.",
+  },
+  {
+    page: "connect", target: "#sourcecards",
+    title: "Bring knowledge in",
+    body: "Onboard content from files, web pages, public git repos, Microsoft Teams chats and meeting transcripts. Every connector lands content through the same pipeline into a chosen domain.",
+    why: "Knowledge lives everywhere, including the tacit kind only ever said out loud in a call. Meeting it where it already is is what makes a shared memory complete.",
+  },
+  {
+    page: "connect", target: ".pipelinepanel",
+    title: "A pipeline you can trust",
+    body: "Everything is fetched, parsed, curated, landed and indexed the same way. Each note is stamped with its <b>provenance</b> (source, time, checksum) and de-duplicated, and team content is reviewed before it merges.",
+    why: "Provenance and review are what separate an enterprise knowledge base from a pile of pasted text. You can always see where a fact came from, and trust it.",
+  },
+  {
+    page: "connect", target: "#surfacecards",
+    title: "Use it anywhere",
+    body: "The same brain shows up in an IDE, a chat assistant, this app, or a tool you build, all over the open <b>MCP</b> protocol. Point a new client at one endpoint and it works immediately.",
+    why: "Curated context is only valuable if it reaches the point of work. A standard protocol means reach without building a bespoke integration every time.",
+  },
+  {
+    page: "connect", target: ".accessnote",
+    title: "One secure front door",
+    body: "Every caller signs in with Google. The brain resolves who they are against a policy and clamps every read and write to only the domains they are allowed to see.",
+    why: "For a team tool, access control cannot be an afterthought. One endpoint safely serves an IDE, an assistant and this UI at once, each scoped to the person behind it.",
+  },
+  {
+    page: "arch", target: ".a-boundary",
+    title: "Hyperscaler-native by design",
+    body: "It runs entirely inside your own Google Cloud project: scale-to-zero Cloud Run, in-region Vertex AI for embeddings and answers, least-privilege service accounts, and private storage.",
+    why: "Your corpus, embeddings and AI never leave your tenancy, the enterprise data-boundary requirement. And because it scales to zero, it costs almost nothing when idle.",
+  },
+  {
+    page: "studio", target: "#sourcepanel",
+    title: "Curate content in Studio",
+    body: "Studio is where you bring in and shape content. Pick a source, generate an editable <b>draft</b>, then keep it in your personal space or propose it to a team. Nothing is saved until you choose to.",
+    why: "Raw content is not context. Studio turns a messy page, repo or transcript into a clean, well-structured note, which is the curation this whole tool is built around.",
+  },
+  {
+    page: "studio", target: ".studiotoggle",
+    title: "From raw to a linked wiki",
+    body: "With AI clean-up on, Gemini rewrites the source into a titled, sectioned note, tags it, and suggests <b>[[links]]</b> to your existing notes. A long document can be split into a set of linked notes.",
+    why: "Good context is structured and interconnected, not one wall of text. Linking notes is what turns a collection into a navigable knowledge graph.",
+  },
+  {
+    page: "agents", target: ".agentwrap",
+    title: "Put the context to work",
+    body: "A multi-agent team, built on Google ADK, answers grounded, cited questions and can propose new notes, all through the same governed brain. A coordinator delegates to a researcher or a curator; each edge here is a real tool call. Replay a scenario, or <b>Run live</b> to watch the real team stream through.",
+    why: "Curation is half the story; use is the other half. This shows context flowing back out to an AI that stays scoped to exactly what the caller may see.",
+  },
+  {
+    page: "agents", target: ".agentreg",
+    title: "A governed AI platform",
+    body: "Scroll down and every agent shows its <b>versioned, content-hashed prompt</b> and registered model, beside an inventory of the models the brain uses. Offline <b>evals</b> assert both the answer's correctness and the domain-isolation boundary on every build. Connect your own assistant like Claude in two clicks from the Agents connector on Overview.",
+    why: "Enterprises need their AI to be auditable and tested, not a black box. Pinning prompts and models, and failing the build if a domain boundary ever leaks, is what makes that real.",
+  },
+  {
+    page: "explore", target: ".graphpanel",
+    title: "Explore the memory",
+    body: "The knowledge graph shows every note and the links between them. Search for anything and get a grounded answer with citations, plus an honest list of what the brain could not support.",
+    why: "Seeing the shape of your collective memory, and getting answers that cite their sources, is what makes the context trustworthy enough to act on.",
+  },
+  {
+    page: "explore", target: ".personalpanel",
+    title: "Personal, shared, and team",
+    body: "You get a private personal space to think in, a shared commons everyone can read, and team domains. Share a single note or a whole space with a colleague whenever you are ready.",
+    why: "Teams need both privacy and sharing. Clear boundaries, with review for team content and community moderation for the commons, are what make shared curation safe at scale.",
+  },
+  {
+    page: "connect",
+    title: "You're ready to curate",
+    body: "That is the tour, and you are back on the <b>Overview</b>. A good first move: open <b>Studio</b>, bring in one page, repo or transcript, and watch it appear in <b>Explore</b>. You can replay this any time from <b>Guided tour</b> in the top bar.",
+    why: "Start small. One well-curated, well-linked note is worth more to your team than a hundred pasted pages, and the value compounds from there.",
+  },
+];
+
+let tourIdx = -1;
+function startTour() {
+  tourIdx = 0;
+  $("#tour").hidden = false;
+  document.addEventListener("keydown", tourKeys, true);
+  window.addEventListener("resize", repositionTour);
+  showTourStep(0);
+}
+function endTour() {
+  $("#tour").hidden = true;
+  tourIdx = -1;
+  document.removeEventListener("keydown", tourKeys, true);
+  window.removeEventListener("resize", repositionTour);
+  try { localStorage.setItem("hb_tour_done", "1"); } catch (_) { /* ignore */ }
+}
+function tourNext() { if (tourIdx < TOUR.length - 1) showTourStep(tourIdx + 1); else endTour(); }
+function tourBack() { if (tourIdx > 0) showTourStep(tourIdx - 1); }
+function tourKeys(e) {
+  if ($("#tour").hidden) return;
+  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); endTour(); }
+  else if (e.key === "ArrowRight" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); tourNext(); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); e.stopPropagation(); tourBack(); }
+}
+function showTourStep(i) {
+  tourIdx = i;
+  const step = TOUR[i];
+  if (step.page) { try { setPage(step.page); } catch (_) { /* keep the tour going */ } }
+  $("#tourtitle").textContent = step.title;
+  $("#tourbody").innerHTML = step.body;
+  const why = $("#tourwhy");
+  if (step.why) { why.hidden = false; why.innerHTML = `<span class="tour-whylbl">Why it matters</span>${step.why}`; }
+  else why.hidden = true;
+  $("#tourstep").textContent = `${i + 1} / ${TOUR.length}`;
+  $("#tourback").disabled = i === 0;
+  $("#tournext").textContent = i === TOUR.length - 1 ? "Finish" : "Next";
+  $("#tourdots").innerHTML = TOUR.map((_, j) => `<span class="tour-dot${j === i ? " on" : ""}"></span>`).join("");
+  // Let the page switch settle (renders + canvas resizes) before we measure.
+  requestAnimationFrame(() => requestAnimationFrame(() => { positionTour(step); $("#tournext").focus(); }));
+}
+function positionTour(step) {
+  // The card is anchored bottom-right by CSS for every step; here we only drive the
+  // spotlight. Steps with no target (welcome / finish) just dim the page.
+  const tour = $("#tour"), hole = $("#tourhole");
+  const target = step.target ? document.querySelector(step.target) : null;
+  const r = target ? target.getBoundingClientRect() : null;
+  if (!r || r.width === 0 || r.height === 0) {
+    tour.classList.add("notarget"); hole.style.display = "none";
+    return;
+  }
+  tour.classList.remove("notarget"); hole.style.display = "block";
+  layoutTour(target, true); // smooth-scroll + spotlight at the predicted position
+  // Insurance: re-place the spotlight once the scroll has settled (a no-op when the
+  // prediction was exact; corrects any clamping mismatch without a mid-scroll jump).
+  afterScrollSettled(() => { if (tourIdx >= 0) layoutTour(target, false); });
+}
+// Call fn once the window scroll has stopped moving (or after a safety timeout), so a
+// correction never fires mid-animation and yanks the card to a transient position.
+function afterScrollSettled(fn) {
+  const start = performance.now();
+  let last = window.scrollY, stable = 0;
+  const tick = () => {
+    if (tourIdx < 0) return;
+    const y = window.scrollY;
+    stable = y === last ? stable + 1 : 0; last = y;
+    const elapsed = performance.now() - start;
+    if ((stable >= 3 && elapsed > 160) || elapsed > 1200) { fn(); return; }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+function repositionTour() {
+  if (tourIdx < 0) return;
+  const step = TOUR[tourIdx];
+  const target = step.target ? document.querySelector(step.target) : null;
+  if (target && target.getBoundingClientRect().width) layoutTour(target, false);
+  else positionTour(step);
+}
+// Drive the spotlight for a target. The target is scrolled toward the top of the
+// viewport so the highlight sits clear of the bottom-right card, and the full target is
+// always spotlighted (no capping); a very tall section's hole simply runs off-screen.
+function layoutTour(target, doScroll) {
+  const hole = $("#tourhole");
+  const vh = window.innerHeight, pad = 8;
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const r = target.getBoundingClientRect();
+  let top = r.top;
+  const left = r.left, w = r.width, h = r.height;
+  if (doScroll) {
+    const desiredTop = 18;
+    const curY = window.scrollY || window.pageYOffset || 0;
+    const maxY = Math.max(0, (document.documentElement.scrollHeight || 0) - vh);
+    const targetY = Math.min(Math.max(curY + (r.top - desiredTop), 0), maxY);
+    const achieved = targetY - curY;
+    if (Math.abs(achieved) > 2) window.scrollTo({ top: targetY, behavior: reduced ? "auto" : "smooth" });
+    top = r.top - achieved; // predicted viewport top after the scroll completes
+  }
+  hole.style.top = (top - pad) + "px";
+  hole.style.left = (left - pad) + "px";
+  hole.style.width = (w + pad * 2) + "px";
+  hole.style.height = (h + pad * 2) + "px";
+}
+// Offer the tour once to a first-time visitor; always available from the top bar.
+function maybeAutostartTour() {
+  let done = true;
+  try { done = localStorage.getItem("hb_tour_done") === "1"; } catch (_) { done = false; }
+  if (!done) setTimeout(() => { if (tourIdx < 0) startTour(); }, 1100);
 }
 
 boot();
