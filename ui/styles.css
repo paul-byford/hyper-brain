@@ -923,6 +923,11 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
   .grid[data-mode="split"] .graphwrap canvas { height: 300px; }
   .grid[data-mode="read"] .graphwrap canvas { height: 170px; }
 
+  /* Agents flow: the diagram reflows to a vertical (portrait) layout in JS when
+     the canvas is taller than it is wide. Give it the height to do so — a phone
+     can't fit the eight boxes side by side. */
+  .agentwrap { height: clamp(440px, 132vw, 540px); }
+
   /* Section intros scale down so headings don't dominate the fold. */
   .sechead h3 { font-size: 20px; }
   .sechead p { font-size: 13px; }
