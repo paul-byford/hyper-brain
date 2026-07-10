@@ -884,3 +884,74 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .evalassertk { color: var(--signal); text-transform: uppercase; letter-spacing: .06em; font-size: 9.5px; margin-right: 4px; }
 .evalpaid { font-size: 11px; color: var(--muted); line-height: 1.5; }
 @media (max-width: 720px) { .evalsuites { grid-template-columns: 1fr; } }
+
+/* ============================ Mobile ============================
+   Phones. The page-tab nav is the critical fix: as a non-wrapping flex row it
+   was ~430px wide, wider than a phone, so the mobile layout viewport expanded
+   to fit it and the whole app rendered zoomed out. Here the nav drops to its
+   own full-width row and scrolls horizontally, so device-width is honoured and
+   the rest of the layout can breathe. */
+@media (max-width: 640px) {
+  .app { padding: 14px 14px 30px; gap: 14px; }
+
+  /* Topbar: brand + theme toggle pinned to the top row, status cluster and
+     nav each on their own full-width row below. Pinning the toggle top-right
+     (rather than letting it wrap as the last item in the right cluster)
+     reclaims the row it used to fall onto. */
+  .topbar { gap: 9px 10px; position: relative; }
+  .brand h1 { font-size: 17px; }
+  .themetgl { position: absolute; top: 0; right: 0; margin: 0; }
+  .bar-right { flex: 1 1 100%; gap: 8px; }
+  .pagetabs {
+    order: 1; flex-basis: 100%; min-width: 0; margin: 3px 0 0; padding-bottom: 1px;
+    overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; border-bottom: 1px solid var(--hair);
+  }
+  .pagetabs::-webkit-scrollbar { display: none; }
+  .pagetabs button { flex: 0 0 auto; padding: 9px 12px; }
+
+  /* Explore toolbar + scope strip: let long controls shrink instead of forcing
+     a wider layout. */
+  .exptools { gap: 8px 10px; }
+  .idpill { max-width: 100%; }
+  .idpill select { min-width: 0; max-width: 190px; text-overflow: ellipsis; }
+  .scope { padding: 12px 13px; gap: 10px 14px; }
+  .scope .stat { font-size: 17px; }
+
+  /* Knowledge graph: a tall hero wastes a phone screen; trim it. */
+  .graphwrap canvas { height: 380px; }
+  .grid[data-mode="split"] .graphwrap canvas { height: 300px; }
+  .grid[data-mode="read"] .graphwrap canvas { height: 170px; }
+
+  /* Agents flow: the diagram reflows to a vertical (portrait) layout in JS when
+     the canvas is taller than it is wide. Give it the height to do so — a phone
+     can't fit the eight boxes side by side. */
+  .agentwrap { height: clamp(440px, 132vw, 540px); }
+
+  /* Section intros scale down so headings don't dominate the fold. */
+  .sechead h3 { font-size: 20px; }
+  .sechead p { font-size: 13px; }
+  .connsec { gap: 13px; }
+
+  /* Read view: reclaim the generous desktop gutters. */
+  .grid[data-mode="read"] .doc article h3 { font-size: 22px; }
+  .grid[data-mode="read"] .doc article p { font-size: 15px; }
+
+  /* Modals: near full-bleed with tighter gutters; stacked field rows. */
+  .modal { padding: 12px; }
+  .modal-card .body { padding: 14px; gap: 11px; }
+  .field2 { flex-wrap: wrap; gap: 6px; }
+  .field2 .fl { width: 100%; }
+  .copybtn.wide { width: 100%; text-align: center; }
+
+  /* Agent live-run controls stack cleanly. */
+  .agentlive input { flex-basis: 100%; }
+}
+
+/* Very small phones: single-column card grids everywhere and denser chrome. */
+@media (max-width: 400px) {
+  .cardgrid { grid-template-columns: 1fr; }
+  .hashchip { font-size: 10px; padding: 5px 8px; }
+  .scope .stat { font-size: 16px; }
+  .graphwrap canvas { height: 340px; }
+}

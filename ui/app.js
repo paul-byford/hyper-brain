@@ -1202,6 +1202,10 @@ function draw() {
   // context (current node + neighbours) even without a hover.
   const focus = hover || (state.mode === "read" ? state.openDocNode : null);
   const hi = focus ? adj.get(focus.id) : null;
+  // On a phone-width canvas the always-on high-degree labels overlap into an
+  // unreadable tangle, so there we label only the node in focus and its
+  // neighbours (revealed by tapping a node open). Desktop is unchanged.
+  const narrow = W < 560;
   for (const e of EDGES) {
     const a = nodeById.get(e.a), b = nodeById.get(e.b);
     const v = Math.min(a.vis, b.vis); if (v < 0.05) continue;
@@ -1223,12 +1227,19 @@ function draw() {
     ctx.fillStyle = withAlpha(col, a); ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = withAlpha(cssVar("--ground"), a); ctx.stroke();
     if (n === state.openDocNode) { ctx.lineWidth = 2; ctx.strokeStyle = withAlpha(cssVar("--signal"), a); ctx.stroke(); }
-    if ((n.r >= 11 || focus === n || (hi && hi.has(n.id)) || n === state.openDocNode) && n.vis > 0.4) {
-      ctx.font = "600 11px " + cssVar("--sans").replace(/"/g, "");
+    const labelled = focus === n || (hi && hi.has(n.id)) || n === state.openDocNode || (!narrow && n.r >= 11);
+    if (labelled && n.vis > 0.4) {
+      ctx.font = (narrow ? "600 10px " : "600 11px ") + cssVar("--sans").replace(/"/g, "");
       ctx.fillStyle = withAlpha(cssVar("--ink"), (dimmed ? 0.3 : 0.92) * n.vis);
       ctx.textBaseline = "middle";
-      const t = n.title.length > 26 ? n.title.slice(0, 25) + "…" : n.title;
-      ctx.fillText(t, n.x + n.r + 6, n.y);
+      const max = narrow ? 16 : 26;
+      const t = n.title.length > max ? n.title.slice(0, max - 1) + "…" : n.title;
+      // Near the right edge on mobile, draw the label on the node's left so it
+      // never runs off-canvas.
+      let lx = n.x + n.r + 6; ctx.textAlign = "left";
+      if (narrow && lx + ctx.measureText(t).width > W - 4) { lx = n.x - n.r - 6; ctx.textAlign = "right"; }
+      ctx.fillText(t, lx, n.y);
+      ctx.textAlign = "left";
     }
   }
 }
@@ -1587,6 +1598,23 @@ const A_NODES = {
   review:  { x: 0.87,  y: 0.80, label: "Review queue", sub: "human approval", kind: "res" },
 };
 
+// Portrait layout for narrow (phone) canvases: the same flow reflowed top-to-bottom
+// so the eight boxes fit without clipping. You → Coordinator fan out to the two
+// specialists, down to the Brain, then out to its three resources. Same ids/labels;
+// only the coordinates differ. Chosen at draw time by aspect ratio, so desktop (a wide
+// canvas) always keeps the original horizontal layout.
+const A_LAYOUT_PORTRAIT = {
+  you:      [0.5,  0.07], coord:   [0.5,  0.21],
+  research: [0.27, 0.37], curate:  [0.73, 0.37],
+  brain:    [0.5,  0.53],
+  gemini:   [0.27, 0.69], corpus:  [0.73, 0.69], review: [0.5, 0.85],
+};
+const A_NODES_PORTRAIT = Object.fromEntries(
+  Object.entries(A_NODES).map(([k, n]) => [k, { ...n, x: A_LAYOUT_PORTRAIT[k][0], y: A_LAYOUT_PORTRAIT[k][1] }]),
+);
+// Reflow only when the canvas is clearly taller than it is wide (a phone in portrait).
+const AN = () => (aH > aW * 1.05 ? A_NODES_PORTRAIT : A_NODES);
+
 const A_SCENARIOS = {
   ask: {
     steps: [
@@ -1663,7 +1691,7 @@ function boxExit(c, dx, dy) {
 }
 // The connecting segment, trimmed to both boxes' borders so lines never cross text.
 function aSeg(a, b) {
-  const pa = aPos(A_NODES[a]), pb = aPos(A_NODES[b]);
+  const N = AN(); const pa = aPos(N[a]), pb = aPos(N[b]);
   let dx = pb.x - pa.x, dy = pb.y - pa.y; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
   return { p1: boxExit(pa, dx, dy), p2: boxExit(pb, -dx, -dy) };
 }
@@ -1683,7 +1711,7 @@ function aParticle(a, b, t) {
   }
 }
 function aNode(id, active) {
-  const n = A_NODES[id], p = aPos(n), col = aColor(n.kind);
+  const n = AN()[id], p = aPos(n), col = aColor(n.kind);
   const w = aBoxW(), h = A_BOXH, x0 = p.x - w / 2, y0 = p.y - h / 2;
   // Opaque base first so an edge never shows through, then a tint if active.
   ax.fillStyle = cssVar("--panel"); ax.fillRect(x0, y0, w, h);
@@ -1712,7 +1740,7 @@ function setAgentModeUI() {
 // A pulsing gold ring on a node, e.g. the You box "firing up" the instant you submit,
 // before the first real event arrives (there is a short lag while the run starts).
 function aPulseNode(id) {
-  const p = aPos(A_NODES[id]), w = aBoxW(), h = A_BOXH;
+  const p = aPos(AN()[id]), w = aBoxW(), h = A_BOXH;
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 210);
   ax.strokeStyle = withAlpha(cssVar("--signal"), 0.35 + 0.55 * pulse);
   ax.lineWidth = 1.5 + 1.8 * pulse;
@@ -1891,7 +1919,7 @@ function agentAt(clientX, clientY) {
   const r = agentCanvas.getBoundingClientRect();
   const cx = clientX - r.left, cy = clientY - r.top, w = aBoxW(), h = A_BOXH;
   return A_CLICKABLE.find((id) => {
-    const p = aPos(A_NODES[id]);
+    const p = aPos(AN()[id]);
     return Math.abs(cx - p.x) <= w / 2 && Math.abs(cy - p.y) <= h / 2;
   }) || null;
 }
@@ -2255,7 +2283,12 @@ function setPage(p) {
   if (p === "studio") renderStudio();
   const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";
   if (p === "review") renderReview();
-  for (const b of $("#pagetabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === p);
+  for (const b of $("#pagetabs").querySelectorAll("button")) {
+    const on = b.dataset.page === p;
+    b.classList.toggle("on", on);
+    // On mobile the tab bar is a horizontal scroll strip; keep the active tab visible.
+    if (on) b.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }
   for (const el of document.querySelectorAll(".exp-only")) el.style.display = p === "explore" ? "" : "none";
   // Agents animation: run only while its page is visible.
   agentsActive = p === "agents";
