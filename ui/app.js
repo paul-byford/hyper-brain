@@ -2255,7 +2255,12 @@ function setPage(p) {
   if (p === "studio") renderStudio();
   const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";
   if (p === "review") renderReview();
-  for (const b of $("#pagetabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === p);
+  for (const b of $("#pagetabs").querySelectorAll("button")) {
+    const on = b.dataset.page === p;
+    b.classList.toggle("on", on);
+    // On mobile the tab bar is a horizontal scroll strip; keep the active tab visible.
+    if (on) b.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }
   for (const el of document.querySelectorAll(".exp-only")) el.style.display = p === "explore" ? "" : "none";
   // Agents animation: run only while its page is visible.
   agentsActive = p === "agents";
