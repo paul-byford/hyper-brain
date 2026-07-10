@@ -17,7 +17,6 @@ from brain_app.serving import (
     DocumentNotFound,
     DomainNotAuthorized,
     MemoryGate,
-    WriteScopeError,
 )
 
 from .conftest import COMMONS, FINSERV, RECRUITMENT
@@ -86,9 +85,11 @@ def test_get_document_cross_domain_is_indistinguishable_from_missing(index, embe
         svc.get_document(_identity(RECRUITER), f"{RECRUITMENT}/does-not-exist")
 
 
-def test_readonly_token_cannot_propose(index, embeddings, policy):
+def test_readonly_token_cannot_propose_into_a_team_domain(index, embeddings, policy):
+    # Commons is writable by everyone (wildcard write), but a team domain still needs an
+    # explicit write grant, so a read-only finserv caller is refused there.
     svc = _service(index, embeddings, policy, gate=MemoryGate())
-    with pytest.raises(WriteScopeError):
+    with pytest.raises(DomainNotAuthorized):
         svc.propose_document(
             _identity(FINSERV_ENG, scope="read"),
             domain=FINSERV,
@@ -124,3 +125,30 @@ def test_valid_proposal_reaches_the_gate(index, embeddings, policy):
     # Provenance stamped, and it landed in the caller's domain only.
     assert f"domain: {FINSERV}" in gate.proposals[0].content
     assert "source: agent:user@bank.com" in gate.proposals[0].content
+
+
+def test_add_document_direct_write_with_a_write_grant(index, embeddings, policy):
+    # A write grant is trust: the write lands live through the corpus gate (note_gate),
+    # not the review gate, so a trusted member contributes without a review round-trip.
+    svc = _service(index, embeddings, policy)
+    result = svc.add_document(
+        _identity(ADMIN), domain=FINSERV, title="Ops runbook", content="steps"
+    )
+    assert svc.note_gate.proposals[-1].domain == FINSERV
+    assert svc.gate.proposals == []  # the review gate was never used
+    assert result.checksum
+
+
+def test_add_document_refused_for_a_team_domain_without_grant(index, embeddings, policy):
+    # A finserv reader can write commons (wildcard), but not the finserv team domain.
+    svc = _service(index, embeddings, policy)
+    with pytest.raises(DomainNotAuthorized):
+        svc.add_document(_identity(FINSERV_ENG), domain=FINSERV, title="x", content="y")
+
+
+def test_add_document_to_commons_allowed_for_everyone(index, embeddings, policy):
+    # The wildcard write grant lets any signed-in caller contribute to the commons
+    # directly (no manual grant), landing live through the corpus gate.
+    svc = _service(index, embeddings, policy)
+    svc.add_document(_identity(FINSERV_ENG), domain=COMMONS, title="Handy tip", content="body")
+    assert svc.note_gate.proposals[-1].domain == COMMONS

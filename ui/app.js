@@ -493,6 +493,23 @@ function wireLive() {
     if (s && t && s !== t) doLink(s, t);
     else if ($("#linkstatus")) $("#linkstatus").innerHTML = '<p class="addnote" style="margin:6px 0">Pick two different notes.</p>';
   });
+
+  // Studio: source picker, file chooser, generate draft, preview, create/propose.
+  $("#studioseg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setStudioSrc(b.dataset.src); });
+  $("#studiofilebtn").addEventListener("click", () => $("#studiofile").click());
+  $("#studiofile").addEventListener("change", (e) => {
+    studioFile = (e.target.files && e.target.files[0]) || null;
+    $("#studiofilename").textContent = studioFile ? studioFile.name : "";
+  });
+  $("#studiourl").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); generateDraft(); } });
+  $("#studiogen").addEventListener("click", generateDraft);
+  $("#draftcontent").addEventListener("input", () => { renderDraftPreview(); updateSplitVisibility(); });
+  $("#drafttarget").addEventListener("change", () => { updateCreateLabel(); loadDraftLinks(); });
+  $("#draftcreate").addEventListener("click", draftCreateClicked);
+  $("#draftdiscard").addEventListener("click", draftDiscardClicked);
+  $("#draftsimplify").addEventListener("click", simplifyDraft);
+  $("#draftsplit").addEventListener("click", enterSplitMode);
+  $("#studioagain").addEventListener("click", resetStudio);
   $("#notedo").addEventListener("click", async () => {
     const title = $("#notetitle").value.trim(), content = $("#notebody").value.trim();
     if (!title && !content) return;
@@ -576,6 +593,7 @@ function applyLiveDocs(docs) {
   const pd = ME.personal && ME.personal.domain;
   const indexedTitles = new Set(docs.filter((d) => d.domain === pd).map((d) => d.title));
   PENDING_NOTES = PENDING_NOTES.filter((p) => !indexedTitles.has(p.title));
+  idxExtraPending = 0; // the document set grew, so pending non-personal adds are indexed
   $("#doccount").textContent = docs.length;
   syncLiveGraph();
   renderScope(); renderBrowser(); renderLegend(); renderPersonal();
@@ -588,6 +606,9 @@ function applyLiveDocs(docs) {
 // we can know honestly: how many just-added items are still pending, how long it has
 // been, and a clear "done" once the poll sees them indexed.
 let idxStartedAt = 0, idxDoneUntil = 0, idxTicker = null;
+// Adds to commons/team domains are not in PENDING_NOTES (that is personal-only), so
+// count them here too, cleared when the poll sees the document set grow (indexed).
+let idxExtraPending = 0;
 function _mmss(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -595,7 +616,7 @@ function _mmss(ms) {
 function renderIndexStatus() {
   const el = $("#idxstatus"), txt = $("#idxtext");
   if (!el || !txt) return;
-  const n = PENDING_NOTES.length;
+  const n = PENDING_NOTES.length + idxExtraPending;
   if (n > 0) {
     if (!idxStartedAt) idxStartedAt = Date.now();
     idxDoneUntil = 0;
@@ -1692,11 +1713,357 @@ function agentAt(clientX, clientY) {
 
 // ---- Page switching (Connections / Explore) ---------------------------------
 let graphSized = false;
+// ---- Studio: bring in content (URL / file / text) and curate it into a draft ----
+let studioSrc = "url", studioFile = null, studioDraft = null;
+let splitItems = null; // when set, the draft panel is in split review/edit mode
+function renderStudio() {
+  if (!LIVE) { studioMsg("Sign in to bring in and curate content."); return; }
+}
+function studioMsg(msg, spin) {
+  const el = $("#studiostatus");
+  if (!el) return;
+  el.innerHTML = msg
+    ? `<p class="studiostat">${spin ? '<span class="idxspin"></span>' : ""}<span>${esc(msg)}</span></p>`
+    : "";
+}
+// Cycle status lines while a generate is in flight, so a ~30s Gemini pass looks alive.
+let studioProgTimer = null;
+function startStudioProgress(steps) {
+  let i = 0;
+  studioMsg(steps[0], true);
+  studioProgTimer = setInterval(() => { i = (i + 1) % steps.length; studioMsg(steps[i], true); }, 3500);
+}
+function stopStudioProgress() { if (studioProgTimer) { clearInterval(studioProgTimer); studioProgTimer = null; } }
+function setStudioSrc(src) {
+  if (!src) return;
+  studioSrc = src;
+  for (const b of $("#studioseg").querySelectorAll("button")) b.classList.toggle("on", b.dataset.src === src);
+  $("#sf-url").hidden = src !== "url";
+  $("#sf-file").hidden = src !== "file";
+  $("#sf-text").hidden = src !== "text";
+}
+async function generateDraft() {
+  if (!LIVE) return;
+  const curate = $("#studiocurate").checked;
+  const payload = { curate };
+  if (studioSrc === "url") {
+    const url = $("#studiourl").value.trim();
+    if (!url) return studioMsg("Enter a URL to fetch.");
+    payload.kind = "url"; payload.url = url;
+  } else if (studioSrc === "text") {
+    const text = $("#studiotext").value.trim();
+    if (!text) return studioMsg("Paste some text to curate.");
+    payload.kind = "text"; payload.text = text;
+  } else {
+    if (!studioFile) return studioMsg("Choose a file first.");
+    payload.kind = "file"; payload.filename = studioFile.name;
+    payload.content_base64 = await fileToBase64(studioFile);
+  }
+  const btn = $("#studiogen"); btn.disabled = true;
+  resetDraftPanel(); // start fresh: clear any prior draft, split, or success state
+  const ai = curate ? "Curating with Gemini Vertex (this can take ~30s)…" : "Preparing the draft…";
+  const steps = studioSrc === "url"
+    ? ["Fetching the page…", "Extracting the main content…", ai, "Polishing the draft…"]
+    : studioSrc === "file"
+      ? ["Parsing the file…", ai, "Polishing the draft…"]
+      : [ai, "Structuring the draft…"];
+  startStudioProgress(steps);
+  try {
+    studioDraft = await API.draft(payload);
+    stopStudioProgress();
+    openDraft(studioDraft);
+    studioMsg("");
+  } catch (e) {
+    stopStudioProgress();
+    studioMsg(e.message || String(e));
+  } finally { btn.disabled = false; }
+}
+// Clear the draft panel to a neutral state, so starting a new draft (or discarding)
+// never leaves stale split/success/in-progress UI from a previous piece of content.
+function resetDraftPanel() {
+  splitItems = null;
+  $("#splitview").hidden = true;
+  $("#draftsingle").hidden = false;
+  $("#draftdiscard").textContent = "Discard";
+  const ds = $("#draftsuccess"); if (ds) { ds.classList.remove("show"); ds.hidden = true; }
+  $("#draftbody").style.opacity = "1";
+  $("#draftcreate").disabled = false;
+  $("#studiodraft").hidden = true;
+}
+function openDraft(draft) {
+  resetDraftPanel();
+  $("#drafttitle").value = draft.title || "";
+  $("#draftcontent").value = draft.content || "";
+  $("#drafttags").value = (draft.tags || []).join(", ");
+  const src = $("#draftsource");
+  if (draft.source_url) {
+    src.hidden = false;
+    src.innerHTML = `Source: <a href="${esc(draft.source_url)}" target="_blank" rel="noopener">${esc(draft.source_url)}</a>`;
+  } else src.hidden = true;
+  $("#draftcurated").hidden = !draft.curated;
+  renderDraftTargets();
+  renderDraftPreview();
+  updateSplitVisibility();
+  $("#draftresult").innerHTML = "";
+  const ds = $("#draftsuccess"); ds.hidden = true; ds.classList.remove("show");
+  $("#draftbody").style.opacity = "1";
+  $("#studiodraft").hidden = false;
+  loadDraftLinks();
+}
+function renderDraftTargets() {
+  const sel = $("#drafttarget"), pd = ME.personal && ME.personal.domain;
+  // Personal + any team domain the caller holds a write grant on. All are direct
+  // writes now (a write grant is trust); the agent's proposals still go to review.
+  let html = `<option value="${esc(pd)}">Personal space</option>`;
+  for (const d of (ME.writable || [])) html += `<option value="${esc(d)}">${esc(d)}</option>`;
+  sel.innerHTML = html;
+  updateCreateLabel();
+}
+function updateCreateLabel() {
+  $("#draftcreate").textContent = "Create";
+}
+function renderDraftPreview() {
+  const el = $("#draftpreview");
+  if (el) el.innerHTML = mdToHtml($("#draftcontent").value);
+}
+// Suggested links for the draft: existing docs similar to it, click to add a [[wikilink]].
+async function loadDraftLinks() {
+  const wrap = $("#draftlinks"); if (!wrap || !studioDraft) return;
+  wrap.innerHTML = '<div class="draftlinkshint">Finding related content to link…</div>';
+  let suggestions;
+  try { suggestions = await API.linkSuggestFor($("#draftcontent").value, $("#drafttarget").value); }
+  catch { wrap.innerHTML = ""; return; }
+  if (!suggestions || !suggestions.length) {
+    wrap.innerHTML = '<div class="draftlinkshint">No related content to link yet.</div>';
+    return;
+  }
+  wrap.innerHTML =
+    '<div class="draftlinkshead mono">Suggested links · click to add</div><div class="draftlinkrow">' +
+    suggestions.map((s) => `<button class="draftlink" data-title="${esc(s.title)}"><span class="dl-add">+</span> ${esc(s.title)} <span class="dl-score mono">${Math.round(s.score * 100)}%</span></button>`).join("") +
+    "</div>";
+  wrap.querySelectorAll(".draftlink").forEach((b) => b.addEventListener("click", () => insertWikilink(b.dataset.title, b)));
+}
+function insertWikilink(title, btn) {
+  const ta = $("#draftcontent"), wl = `[[${title}]]`;
+  if (!ta.value.includes(wl)) {
+    const v = ta.value.replace(/\s+$/, "");
+    ta.value = v + (v.includes("## Related") ? `\n- ${wl}\n` : `\n\n## Related\n\n- ${wl}\n`);
+    renderDraftPreview();
+  }
+  if (btn) { btn.disabled = true; btn.classList.add("added"); const a = btn.querySelector(".dl-add"); if (a) a.textContent = "✓"; }
+}
+async function createDraft() {
+  if (!LIVE || !studioDraft) return;
+  const title = $("#drafttitle").value.trim() || "Untitled";
+  const content = $("#draftcontent").value;
+  const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
+  const src = studioDraft.source_url || undefined;
+  const tags = draftTags();
+  const btn = $("#draftcreate"); btn.disabled = true;
+  try {
+    await API.create({ domain: target, title, content, source_url: src, tags });
+    if (target === pd) {
+      PENDING_NOTES.unshift({ title, status: "saving" });
+      renderPersonal(); renderIndexStatus();
+    } else {
+      idxExtraPending += 1; renderIndexStatus(); // commons/team add: reflect it in the pill
+    }
+    startLivePoll();
+    const where = target === pd ? "your personal space" : target;
+    studioSuccess(title, `Added to ${where}. Indexing now, searchable in a few minutes.`);
+  } catch (e) {
+    $("#draftresult").innerHTML = `<p class="addnote" style="margin:8px 0 0">${esc(e.message || String(e))}</p>`;
+    btn.disabled = false;
+  }
+}
+// Gracefully retire the editor: fade it back, reveal a success panel in the freed
+// space that invites the user to add more while their content indexes.
+function studioSuccess(title, msg) {
+  studioDraft = null;
+  const body = $("#draftbody");
+  body.style.transition = "opacity .3s"; body.style.opacity = "0.12";
+  $("#ds-title").textContent = `Added “${title}”`;
+  $("#ds-msg").textContent = msg;
+  const ds = $("#draftsuccess"); ds.hidden = false;
+  requestAnimationFrame(() => ds.classList.add("show"));
+}
+function resetStudio() {
+  const ds = $("#draftsuccess"); if (ds) { ds.classList.remove("show"); ds.hidden = true; }
+  $("#draftbody").style.opacity = "1";
+  $("#studiodraft").hidden = true;
+  $("#draftcreate").disabled = false;
+  splitItems = null; $("#splitview").hidden = true; $("#draftsingle").hidden = false; $("#draftdiscard").textContent = "Discard";
+  $("#studiourl").value = ""; $("#studiotext").value = ""; studioFile = null; $("#studiofilename").textContent = "";
+  $("#draftresult").innerHTML = ""; studioMsg("");
+  if (studioSrc === "url") $("#studiourl").focus();
+}
+function discardDraft() {
+  studioDraft = null; $("#studiodraft").hidden = true; $("#draftresult").innerHTML = "";
+  const ds = $("#draftsuccess"); if (ds) { ds.classList.remove("show"); ds.hidden = true; }
+  $("#draftbody").style.opacity = "1"; $("#draftcreate").disabled = false;
+}
+function draftTags() {
+  return $("#drafttags").value.split(",").map((t) => t.trim()).filter(Boolean);
+}
+// Parse the draft's markdown into a preamble (before the first '##') plus '##' sections.
+const _META_HEADINGS = new Set(["summary", "key terms", "related", "sections", "references"]);
+function draftSections() {
+  const parts = $("#draftcontent").value.split(/^(##\s+.*)$/m);
+  const preamble = (parts[0] || "").trim();
+  const sections = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    sections.push({ heading: parts[i].replace(/^##\s+/, "").trim(), body: (parts[i + 1] || "").trim() });
+  }
+  return { preamble, sections };
+}
+function updateSplitVisibility() {
+  const content = draftSections().sections.filter((s) => !_META_HEADINGS.has(s.heading.toLowerCase()));
+  $("#draftsplit").hidden = content.length < 2;
+}
+// "Explain simply": rewrite the draft in plain language (on-demand model call).
+async function simplifyDraft() {
+  if (!LIVE) return;
+  const btn = $("#draftsimplify"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Simplifying…";
+  try {
+    const r = await API.simplify($("#draftcontent").value);
+    if (r.simplified) {
+      $("#draftcontent").value = r.content; renderDraftPreview(); updateSplitVisibility();
+      $("#draftresult").innerHTML = '<p class="addnote" style="margin:8px 0 0">Rewritten in plainer language.</p>';
+    } else {
+      $("#draftresult").innerHTML = '<p class="addnote" style="margin:8px 0 0">Could not simplify right now (the model was busy). Try again shortly.</p>';
+    }
+  } catch (e) {
+    $("#draftresult").innerHTML = `<p class="addnote" style="margin:8px 0 0">${esc(e.message || String(e))}</p>`;
+  } finally { btn.disabled = false; btn.textContent = label; }
+}
+// Split builds the notes as editable items (index + one per substantive section) but
+// does NOT create them: the user reviews/edits each, then "Create all" writes them.
+function buildSplitItems() {
+  const { preamble, sections } = draftSections();
+  const content = sections.filter((s) => !_META_HEADINGS.has(s.heading.toLowerCase()));
+  const meta = sections.filter((s) => _META_HEADINGS.has(s.heading.toLowerCase()));
+  const base = $("#drafttitle").value.trim() || "Untitled";
+  let indexBody = preamble.replace(/^#\s+.*$/m, "").trim();
+  for (const m of meta) indexBody += `\n\n## ${m.heading}\n\n${m.body}`;
+  const items = [{ kind: "index", title: base, body: indexBody.trim() }];
+  for (const s of content) items.push({ kind: "section", title: `${base}: ${s.heading}`, body: s.body });
+  return items;
+}
+// Assemble one item into full markdown, deriving the cross-links from current titles so
+// renaming a note keeps the index<->section links correct.
+function assembleSplitItem(item) {
+  if (item.kind === "index") {
+    const links = splitItems.filter((x) => x.kind === "section").map((x) => `- [[${x.title}]]`).join("\n");
+    return `# ${item.title}\n\n${item.body}\n\n## Sections\n\n${links}\n`;
+  }
+  const indexTitle = (splitItems.find((x) => x.kind === "index") || {}).title || "Index";
+  return `# ${item.title}\n\n${item.body}\n\n## Related\n\n- [[${indexTitle}]]\n`;
+}
+function enterSplitMode() {
+  const items = buildSplitItems();
+  if (items.filter((x) => x.kind === "section").length < 2) return;
+  splitItems = items;
+  renderSplitItems();
+  $("#draftsingle").hidden = true;
+  $("#splitview").hidden = false;
+  $("#draftcreate").textContent = `Create ${items.length} notes`;
+  $("#draftdiscard").textContent = "Back to single draft";
+}
+function exitSplitMode() {
+  splitItems = null;
+  $("#splitview").hidden = true;
+  $("#draftsingle").hidden = false;
+  $("#draftdiscard").textContent = "Discard";
+  updateCreateLabel();
+}
+function renderSplitItems() {
+  const wrap = $("#splititems");
+  $("#splitcount").textContent = splitItems.length;
+  wrap.innerHTML = splitItems.map((item, i) => `
+    <details class="splititem" ${i === 0 ? "open" : ""}>
+      <summary><span class="splitkind ${item.kind}">${item.kind}</span><span class="splitname">${esc(item.title)}</span></summary>
+      <div class="splitedit">
+        <input class="spl-title mono" data-i="${i}" value="${esc(item.title)}" aria-label="Note title" />
+        <div class="splitcols">
+          <textarea class="spl-body mono" data-i="${i}" rows="8" spellcheck="false">${esc(item.body)}</textarea>
+          <div class="draftpreview spl-preview" data-i="${i}"></div>
+        </div>
+      </div>
+    </details>`).join("");
+  wrap.querySelectorAll(".spl-title").forEach((el) => el.addEventListener("input", () => {
+    splitItems[+el.dataset.i].title = el.value;
+    const name = el.closest(".splititem").querySelector(".splitname"); if (name) name.textContent = el.value;
+    refreshSplitPreviews(); // titles drive the cross-links, so refresh all previews
+  }));
+  wrap.querySelectorAll(".spl-body").forEach((el) => el.addEventListener("input", () => {
+    splitItems[+el.dataset.i].body = el.value; refreshSplitPreview(+el.dataset.i);
+  }));
+  refreshSplitPreviews();
+}
+function refreshSplitPreview(i) {
+  const el = $(`#splititems .spl-preview[data-i="${i}"]`);
+  if (el) el.innerHTML = mdToHtml(assembleSplitItem(splitItems[i]));
+}
+function refreshSplitPreviews() { splitItems.forEach((_, i) => refreshSplitPreview(i)); }
+async function createSplitAll() {
+  if (!LIVE || !splitItems) return;
+  const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
+  const src = studioDraft ? studioDraft.source_url || undefined : undefined;
+  const tags = draftTags();
+  const btn = $("#draftcreate"); btn.disabled = true;
+  try {
+    for (const item of splitItems) {
+      await API.create({ domain: target, title: item.title, content: assembleSplitItem(item), source_url: src, tags });
+    }
+    const all = splitItems.map((x) => x.title), n = splitItems.length;
+    if (target === pd) {
+      for (const t of all) PENDING_NOTES.unshift({ title: t, status: "saving" });
+      renderPersonal(); renderIndexStatus();
+    } else { idxExtraPending += n; renderIndexStatus(); }
+    startLivePoll();
+    splitItems = null; $("#splitview").hidden = true; $("#draftsingle").hidden = false;
+    studioSuccess(all[0], `Created ${n} linked notes (an index plus ${n - 1} sections). Indexing now.`);
+  } catch (e) {
+    $("#draftresult").innerHTML = `<p class="addnote" style="margin:8px 0 0">${esc(e.message || String(e))}</p>`;
+    btn.disabled = false;
+  }
+}
+// The Create / Discard buttons are shared, so route them by mode.
+function draftCreateClicked() { if (splitItems) createSplitAll(); else createDraft(); }
+function draftDiscardClicked() { if (splitItems) exitSplitMode(); else discardDraft(); }
+// Minimal, safe markdown -> HTML for the live draft preview (headings, lists, inline).
+function mdToHtml(md) {
+  const e = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s) => e(s)
+    .replace(/\[\[([^\]]+)\]\]/g, '<span class="wl">[[$1]]</span>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const lines = (md || "").split("\n");
+  let html = "", inList = false, para = [];
+  const flushPara = () => { if (para.length) { html += "<p>" + inline(para.join(" ")) + "</p>"; para = []; } };
+  const flushList = () => { if (inList) { html += "</ul>"; inList = false; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    const h = /^(#{1,6})\s+(.*)$/.exec(line), li = /^[-*]\s+(.*)$/.exec(line);
+    if (h) { flushPara(); flushList(); const n = h[1].length; html += `<h${n}>${inline(h[2])}</h${n}>`; }
+    else if (li) { flushPara(); if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(li[1])}</li>`; }
+    else if (!line.trim()) { flushPara(); flushList(); }
+    else para.push(line);
+  }
+  flushPara(); flushList();
+  return html;
+}
+
 function setPage(p) {
   $("#page-explore").hidden = p !== "explore";
   $("#page-connect").hidden = p !== "connect";
   $("#page-arch").hidden = p !== "arch";
   $("#page-agents").hidden = p !== "agents";
+  const studio = $("#page-studio"); if (studio) studio.hidden = p !== "studio";
+  if (p === "studio") renderStudio();
   const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";
   if (p === "review") renderReview();
   for (const b of $("#pagetabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.page === p);

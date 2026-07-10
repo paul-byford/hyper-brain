@@ -195,10 +195,15 @@ def test_document_ai_parser_uses_injected_process():
     assert parser.parse(b"%PDF-1.7", "application/pdf").body == "Parsed PDF text."
 
 
-def test_get_parser_selects_document_ai_when_configured(monkeypatch):
+def test_get_parser_is_text_first_for_pdf(monkeypatch):
+    # PDFs route to the text-first PdfParser; it falls back to Document AI OCR
+    # internally only for an image-only PDF, so text PDFs never hit the paid OCR call.
+    from brain_app.ingest.parsers.pdf import PdfParser
+
     monkeypatch.setenv("BRAIN_DOCAI_PROCESSOR", "projects/p/locations/l/processors/x")
-    assert isinstance(get_parser("application/pdf"), DocumentAiParser)
+    assert isinstance(get_parser("application/pdf"), PdfParser)
     monkeypatch.delenv("BRAIN_DOCAI_PROCESSOR")
+    assert isinstance(get_parser("application/pdf"), PdfParser)
 
 
 # --- Ingest lands to a gs:// corpus (the in-tenancy cloud path) ----------------

@@ -145,11 +145,13 @@ def test_docx_file_is_extracted_and_ingested(svc):
     assert "Hello world" in proposal.content and "Second paragraph" in proposal.content
 
 
-def test_team_upload_goes_through_the_reviewed_path(svc):
-    # An admin (write on finserv) uploads into the team domain -> the propose gate.
+def test_team_upload_writes_directly_with_a_write_grant(svc):
+    # A write grant is trust: an admin's upload into the team domain lands live through
+    # the corpus gate (note_gate), not the review gate. The agent's propose path still
+    # goes to review; a direct human upload with a grant does not.
     svc.ingest_file(ADMIN, filename="brief.txt", domain=FINSERV, content_base64=_b64(b"team brief"))
-    assert svc.gate.proposals[0].domain == FINSERV
-    assert svc.note_gate.proposals == []  # not the personal path
+    assert svc.note_gate.proposals[-1].domain == FINSERV
+    assert svc.gate.proposals == []
 
 
 def test_team_upload_without_write_is_refused(svc):

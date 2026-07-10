@@ -22,14 +22,19 @@ from .models import ParsedDoc
 
 @runtime_checkable
 class Curator(Protocol):
-    def curate(self, doc: ParsedDoc) -> ParsedDoc: ...
+    def curate(self, doc: ParsedDoc, known_titles: list[str] | None = None) -> ParsedDoc: ...
+
+    def rewrite(self, text: str, instruction: str) -> str: ...
 
 
 class PassthroughCurator:
     """Deterministic no-op: the document is landed as parsed."""
 
-    def curate(self, doc: ParsedDoc) -> ParsedDoc:
+    def curate(self, doc: ParsedDoc, known_titles: list[str] | None = None) -> ParsedDoc:
         return doc
+
+    def rewrite(self, text: str, instruction: str) -> str:
+        return text
 
 
 def get_curator(name: str | None = None) -> Curator:
@@ -48,11 +53,23 @@ def get_curator(name: str | None = None) -> Curator:
 
 
 _CURATE_INSTRUCTION = (
-    "Rewrite the following source text into a clean, well-structured markdown "
-    "article. Preserve every fact; do NOT invent anything not in the source. Use "
-    "short paragraphs and headings. Where the text clearly refers to another likely "
-    "document or concept, mark it with [[wikilink]] syntax. Return only the markdown, "
-    "no preamble.\n\nSource:\n"
+    "Turn the following source text into a clear, well-structured markdown note that is "
+    "easy to read and reference. Requirements:\n"
+    "- Start with a single '# ' H1 title that names the topic.\n"
+    "- Add a short '## Summary' near the top: 2-4 sentences or a few bullet points "
+    "capturing the key takeaways.\n"
+    "- Organise the body with '## ' (and '### ') section headings, short paragraphs, and "
+    "bullet or numbered lists for enumerations and steps.\n"
+    "- If the source is long, condense it faithfully into well-organised sections and key "
+    "points rather than reproducing it verbatim; keep the important facts.\n"
+    "- Do NOT invent anything that is not supported by the source.\n"
+    "- Where the text refers to another likely document or concept, mark it with "
+    "[[wikilink]] syntax.\n"
+    "- If there are notable terms or concepts worth defining, add a '## Key terms' "
+    "section with a short bullet-point glossary (term: one-line definition).\n"
+    "- On the very last line, output 'Tags:' followed by 3 to 6 short, lowercase, "
+    "comma-separated topic tags.\n"
+    "Return only the markdown followed by that single Tags line, no other commentary."
 )
 
 
@@ -79,11 +96,52 @@ class GeminiCurator:
     def _call(self, prompt: str) -> str:
         if self._generate is not None:
             return self._generate(prompt)
+        import time
+
         from google import genai
+        from google.genai import types
 
-        client = genai.Client(vertexai=True, project=self.project, location=self.location)
-        return client.models.generate_content(model=self.model, contents=prompt).text or ""
+        # Bound the call so a throttled/slow model fails fast. Thinking is off: a rewrite
+        # needs none, and it roughly halves the tokens spent, easing the Vertex quota.
+        client = genai.Client(
+            vertexai=True,
+            project=self.project,
+            location=self.location,
+            http_options=types.HttpOptions(timeout=60000),
+        )
+        config = types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        )
+        # A short retry rides out the per-minute quota (429 RESOURCE_EXHAUSTED); if it
+        # still fails, make_draft falls back to the un-curated text rather than erroring.
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = client.models.generate_content(
+                    model=self.model, contents=prompt, config=config
+                )
+                return resp.text or ""
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise
+        raise last if last else RuntimeError("curation failed")
 
-    def curate(self, doc: ParsedDoc) -> ParsedDoc:
-        cleaned = self._call(_CURATE_INSTRUCTION + doc.body).strip()
+    def curate(self, doc: ParsedDoc, known_titles: list[str] | None = None) -> ParsedDoc:
+        parts = [_CURATE_INSTRUCTION]
+        if known_titles:
+            listed = ", ".join(f"[[{t}]]" for t in known_titles[:60])
+            parts.append(
+                "Prefer linking to these existing documents, using their exact titles in "
+                f"double brackets, when the article refers to them: {listed}."
+            )
+        parts.append("Source:\n" + doc.body)
+        cleaned = self._call("\n\n".join(parts)).strip()
         return ParsedDoc(body=cleaned or doc.body, title=doc.title, tags=doc.tags)
+
+    def rewrite(self, text: str, instruction: str) -> str:
+        return self._call(instruction + "\n\nText:\n" + text).strip() or text

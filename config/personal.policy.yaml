@@ -13,11 +13,14 @@ domains:
   - enterprise-ai-recruitment
 
 grants:
-  # Commons: the shared space every signed-in caller can read. The wildcard '*'
-  # matches any authenticated identity (the brain is never anonymous). It can only
-  # ever reach the declared 'commons' domain here, never anyone's personal domain,
-  # which is derived from identity and never named in this policy.
+  # Commons: the shared space every signed-in caller can read AND write. The wildcard
+  # '*' matches any authenticated identity (the brain is never anonymous), and
+  # write: true means a new Google sign-up can contribute to the commons directly, with
+  # no manual grant. It can only ever reach the declared 'commons' domain here, never
+  # anyone's personal domain, which is derived from identity and never named in this
+  # policy. (Team domains still require an explicit write grant.)
   - principal: "*"
+    write: true
     domains:
       - commons
 

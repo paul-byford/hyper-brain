@@ -29,7 +29,12 @@ export const api = (apiUrl) => ({
   document: (doc_id) => call(apiUrl, `/api/document?doc_id=${encodeURIComponent(doc_id)}`),
   upload: (filename, content_base64, domain) =>
     call(apiUrl, "/api/upload", { method: "POST", body: { filename, content_base64, domain } }),
-  note: (title, content) => call(apiUrl, "/api/note", { method: "POST", body: { title, content } }),
+  note: (title, content, source_url) =>
+    call(apiUrl, "/api/note", { method: "POST", body: { title, content, source_url } }),
+  draft: (payload) => call(apiUrl, "/api/draft", { method: "POST", body: payload }),
+  simplify: (text) => call(apiUrl, "/api/simplify", { method: "POST", body: { text } }),
+  propose: (payload) => call(apiUrl, "/api/propose", { method: "POST", body: payload }),
+  create: (payload) => call(apiUrl, "/api/create", { method: "POST", body: payload }),
   shares: () => call(apiUrl, "/api/shares"),
   share: (payload) => call(apiUrl, "/api/share", { method: "POST", body: payload }),
   unshare: (payload) => call(apiUrl, "/api/unshare", { method: "POST", body: payload }),
@@ -38,6 +43,8 @@ export const api = (apiUrl) => ({
   agentRun: (query) => call(apiUrl, "/api/agent/run", { method: "POST", body: { query } }),
   linkSuggestions: () => call(apiUrl, "/api/link/suggestions").then((d) => d.suggestions),
   link: (source, target) => call(apiUrl, "/api/link", { method: "POST", body: { source, target } }),
+  linkSuggestFor: (text, domain) =>
+    call(apiUrl, "/api/link/suggest-for", { method: "POST", body: { text, domain } }).then((d) => d.suggestions),
 });
 
 // Read a File object as base64 (no data: prefix), for /api/upload.

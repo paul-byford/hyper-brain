@@ -66,8 +66,9 @@
     <nav class="pagetabs" id="pagetabs" aria-label="Page">
       <button data-page="connect" class="on">Overview</button>
       <button data-page="arch">Architecture</button>
-      <button data-page="explore">Explore</button>
+      <button data-page="studio">Studio</button>
       <button data-page="agents">Agents</button>
+      <button data-page="explore">Explore</button>
       <button data-page="review" id="reviewtab" hidden>Review</button>
     </nav>
     <div class="bar-right">
@@ -287,6 +288,81 @@
       </div>
       <div class="agentmodels" id="agentmodels"></div>
       <div class="agentevals" id="agentevals"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-studio" hidden>
+    <div class="sechead">
+      <span class="eyebrow">Content studio</span>
+      <h3>Bring in content, curated into a clean draft</h3>
+      <p>Fetch a web page, upload a file, or paste text. The studio pulls out the real content and, if you like, cleans it into a well-structured draft with suggested links to your existing notes. Review and edit it, then create it in your personal space or propose it to a team for review. Nothing is saved until you create it.</p>
+    </div>
+    <div class="studiogrid">
+      <section class="panel studioinput">
+        <header><h2>Source</h2></header>
+        <div class="body">
+          <div class="seg" id="studioseg" role="group" aria-label="Input method">
+            <button data-src="url" class="on">From a URL</button>
+            <button data-src="file">From a file</button>
+            <button data-src="text">Paste text</button>
+          </div>
+          <div class="studiofield" id="sf-url">
+            <input id="studiourl" type="url" placeholder="https://example.com/article" />
+          </div>
+          <div class="studiofield" id="sf-file" hidden>
+            <button class="ghostbtn" id="studiofilebtn">Choose a file…</button>
+            <input type="file" id="studiofile" accept=".pdf,.docx,.md,.markdown,.txt,.html,.htm" hidden />
+            <span class="studiofilename mono" id="studiofilename"></span>
+          </div>
+          <div class="studiofield" id="sf-text" hidden>
+            <textarea id="studiotext" rows="7" placeholder="Paste or type raw text to curate into a clean note…"></textarea>
+          </div>
+          <label class="studiotoggle"><input type="checkbox" id="studiocurate" checked /> <span>Clean up with AI (curator)</span></label>
+          <button class="gobtn" id="studiogen">Generate draft ▸</button>
+          <div id="studiostatus"></div>
+        </div>
+      </section>
+      <section class="panel studiodraft" id="studiodraft" hidden>
+        <header><h2>Draft</h2><span class="draftcurated mono" id="draftcurated" hidden>✦ AI-curated</span></header>
+        <div class="body" id="draftbody">
+          <div id="draftsingle">
+            <input id="drafttitle" class="drafttitle" placeholder="Draft title" />
+            <div class="draftsource mono" id="draftsource" hidden></div>
+            <div class="draftcols">
+              <textarea id="draftcontent" class="draftcontent mono" rows="16" spellcheck="false"></textarea>
+              <div class="draftpreview" id="draftpreview"></div>
+            </div>
+            <div class="drafttools">
+              <button class="ghostbtn tiny" id="draftsimplify">✎ Explain simply</button>
+              <button class="ghostbtn tiny" id="draftsplit" hidden>⑃ Split into linked notes</button>
+            </div>
+            <label class="drafttagsfield">
+              <span class="drafttagslbl">Tags</span>
+              <input id="drafttags" class="drafttags mono" placeholder="comma separated, e.g. fraud, ml, finserv" />
+            </label>
+            <div class="draftlinks" id="draftlinks"></div>
+          </div>
+          <div id="splitview" hidden>
+            <div class="splithead">
+              <span class="eyebrow">Split into <b id="splitcount">0</b> linked notes</span>
+              <span class="splithint">Review and edit each note below, then create them all. The links between them update automatically as you rename.</span>
+            </div>
+            <div id="splititems"></div>
+          </div>
+          <div class="draftactions">
+            <select id="drafttarget" class="linksel" aria-label="Where to create"></select>
+            <button class="gobtn" id="draftcreate">Create</button>
+            <button class="ghostbtn" id="draftdiscard">Discard</button>
+          </div>
+          <div id="draftresult"></div>
+        </div>
+        <div class="draftsuccess" id="draftsuccess" hidden>
+          <div class="ds-check">✓</div>
+          <h3 id="ds-title"></h3>
+          <p id="ds-msg"></p>
+          <button class="gobtn" id="studioagain">Add more content</button>
+        </div>
+      </section>
     </div>
   </div>
 

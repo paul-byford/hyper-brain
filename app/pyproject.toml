@@ -20,7 +20,7 @@ Homepage = "https://github.com/paul-byford/"
 [project.optional-dependencies]
 # Cloud adapters and serving, wired in later phases. Kept optional so the
 # offline core installs with no heavy or cloud dependencies.
-vertex = ["google-cloud-aiplatform>=1.60"]
+vertex = ["google-cloud-aiplatform>=1.60", "google-cloud-documentai>=2.20"]
 # Serving: the MCP server, real Google OIDC token verification, and optional
 # OpenTelemetry tracing to Cloud Trace (section 10). The offline core and the
 # personal demo need none of this; google-auth verifies production Google-signed

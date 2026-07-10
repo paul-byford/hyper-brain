@@ -8,8 +8,6 @@ offline core; it is resolved lazily like the Vertex embeddings adapter.
 
 from __future__ import annotations
 
-import os
-
 from .base import Parser
 from .html import HtmlParser
 from .markdown import MarkdownParser
@@ -36,12 +34,9 @@ def get_parser(mime: str) -> Parser:
 
         return DocxParser()
     if base in _PDF:
-        # Lazy: the real parsers need the cloud, so they are not imported offline.
-        # Use in-tenancy Document AI when a processor is configured, else the stub.
-        if os.environ.get("BRAIN_DOCAI_PROCESSOR"):
-            from .pdf import DocumentAiParser
-
-            return DocumentAiParser()
+        # Text-first: pypdf reads the text layer for free (no page limit); PdfParser
+        # itself falls back to Document AI OCR only for an image-only PDF, and only when
+        # a processor is configured. So text PDFs never hit the paid OCR call.
         from .pdf import PdfParser
 
         return PdfParser()

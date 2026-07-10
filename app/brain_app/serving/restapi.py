@@ -98,8 +98,56 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
 
     async def note(request, identity):
         data = await request.json()
+        tags = data.get("tags")
         result = service.add_note(
-            identity, title=str(data.get("title", "")), content=str(data.get("content", ""))
+            identity,
+            title=str(data.get("title", "")),
+            content=str(data.get("content", "")),
+            source_url=data.get("source_url"),
+            tags=[str(t) for t in tags] if isinstance(tags, list) else None,
+        )
+        return JSONResponse({"status": result.status, "detail": result.detail})
+
+    async def draft(request, identity):
+        data = await request.json()
+        result = service.make_draft(
+            identity,
+            kind=str(data.get("kind", "")),
+            url=data.get("url"),
+            text=data.get("text"),
+            filename=data.get("filename"),
+            content_base64=data.get("content_base64"),
+            curate=bool(data.get("curate", True)),
+        )
+        return JSONResponse(result)
+
+    async def simplify(request, identity):
+        data = await request.json()
+        return JSONResponse(service.simplify_text(identity, str(data.get("text", ""))))
+
+    async def propose(request, identity):
+        data = await request.json()
+        result = service.propose_document(
+            identity,
+            domain=str(data["domain"]),
+            title=str(data.get("title", "")),
+            content=str(data.get("content", "")),
+            source_url=data.get("source_url"),
+        )
+        return JSONResponse({"status": result.status, "path": result.path, "detail": result.detail})
+
+    async def create_document(request, identity):
+        # Direct live write into a domain the caller may write (personal, or a team
+        # domain they hold a write grant on). No review; the grant is the trust.
+        data = await request.json()
+        tags = data.get("tags")
+        result = service.add_document(
+            identity,
+            domain=str(data["domain"]),
+            title=str(data.get("title", "")),
+            content=str(data.get("content", "")),
+            source_url=data.get("source_url"),
+            tags=[str(t) for t in tags] if isinstance(tags, list) else None,
         )
         return JSONResponse({"status": result.status, "detail": result.detail})
 
@@ -157,6 +205,13 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
             return JSONResponse({"error": "source and target are required"}, status_code=400)
         return JSONResponse(service.link_notes(identity, source, target))
 
+    async def link_suggest_for(request, identity):
+        data = await request.json()
+        suggestions = service.suggest_links_for_text(
+            identity, str(data.get("text", "")), domain=data.get("domain")
+        )
+        return JSONResponse({"suggestions": suggestions})
+
     async def agent_run(request, identity):
         # Run the real multi-agent ADK team, scoped to this caller, and return the
         # execution trace (for the Agents-page animation) plus the final answer.
@@ -193,6 +248,10 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/answer", ["POST"], answer)
     route("/api/document", ["GET"], document)
     route("/api/note", ["POST"], note)
+    route("/api/draft", ["POST"], draft)
+    route("/api/simplify", ["POST"], simplify)
+    route("/api/propose", ["POST"], propose)
+    route("/api/create", ["POST"], create_document)
     route("/api/upload", ["POST"], upload)
     route("/api/share", ["POST"], share)
     route("/api/unshare", ["POST"], unshare)
@@ -202,4 +261,5 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/agent/run", ["POST"], agent_run)
     route("/api/agent/stream", ["POST"], agent_stream)
     route("/api/link/suggestions", ["GET"], link_suggestions)
+    route("/api/link/suggest-for", ["POST"], link_suggest_for)
     route("/api/link", ["POST"], link)

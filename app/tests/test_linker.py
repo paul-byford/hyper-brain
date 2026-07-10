@@ -32,8 +32,16 @@ def _identity(email="me@x"):
 
 def _doc(doc_id, domain, title, links=None):
     return Document(
-        doc_id=doc_id, domain=domain, title=title, path="", tags=["note"],
-        raw_links=[], links=links or [], source=None, source_url=None, fetched_at=None,
+        doc_id=doc_id,
+        domain=domain,
+        title=title,
+        path="",
+        tags=["note"],
+        raw_links=[],
+        links=links or [],
+        source=None,
+        source_url=None,
+        fetched_at=None,
     )
 
 
@@ -47,8 +55,13 @@ def _index(docs, embeddings, adjacency=None):
     emb = np.array(embeddings, dtype=np.float32)
     chunks = [_chunk(d.doc_id, d.domain, d.title, f"{d.title} body") for d in docs]
     return BrainIndex(
-        chunks=chunks, embeddings=emb, documents={d.doc_id: d for d in docs},
-        adjacency=adjacency or {}, embedding_dim=emb.shape[1], provider="fake", content_hash="x",
+        chunks=chunks,
+        embeddings=emb,
+        documents={d.doc_id: d for d in docs},
+        adjacency=adjacency or {},
+        embedding_dim=emb.shape[1],
+        provider="fake",
+        content_hash="x",
     )
 
 
@@ -74,8 +87,11 @@ def _personal_service():
     ]
     idx = _index(docs, [[1.0, 0.0], [0.97, 0.05]])
     return BrainService(
-        idx, FakeEmbeddings(), load_policy(prof="personal"),
-        note_gate=MemoryGate(), reindexer=MemoryReindexer(),
+        idx,
+        FakeEmbeddings(),
+        load_policy(prof="personal"),
+        note_gate=MemoryGate(),
+        reindexer=MemoryReindexer(),
     )
 
 

@@ -113,3 +113,11 @@ resource "google_project_iam_member" "brain_trace_agent" {
   role    = "roles/cloudtrace.agent"
   member  = "serviceAccount:${google_service_account.brain.email}"
 }
+
+# The brain parses scanned/image PDFs with Document AI in-tenancy (Studio uploads),
+# so it may call the OCR processor. apiUser is the least role that allows processing.
+resource "google_project_iam_member" "brain_documentai_user" {
+  project = var.project_id
+  role    = "roles/documentai.apiUser"
+  member  = "serviceAccount:${google_service_account.brain.email}"
+}

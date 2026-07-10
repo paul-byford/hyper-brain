@@ -54,6 +54,11 @@ _EXT_MIME = {
 }
 
 
+# Cap the text sent to the curator (~12k tokens). A larger source still yields a good
+# structured digest, and a smaller call is far less likely to hit the Gemini quota.
+_CURATE_MAX_CHARS = 48000
+
+
 def _title_from_filename(filename: str) -> str:
     stem = os.path.splitext(safe_filename(filename))[0]
     words = [w for w in stem.replace("_", " ").replace("-", " ").split() if w]
@@ -109,6 +114,7 @@ class BrainService:
         attachment_store: AttachmentStore | None = None,
         reviewer: Reviewer | None = None,
         reindexer: Reindexer | None = None,
+        curator=None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
@@ -144,6 +150,12 @@ class BrainService:
         # Triggers the index rebuild after a live write (note/upload/accept), so new
         # content becomes searchable promptly instead of at the next scheduled build.
         self.reindexer: Reindexer = reindexer or MemoryReindexer()
+        # The raw-to-wiki curator used to clean up a draft. Defaults to the offline
+        # passthrough (no rewriting); the deployed brain sets BRAIN_CURATE=gemini so
+        # the Studio "clean up with AI" toggle runs a real in-tenancy Gemini pass.
+        from ..ingest.curate import get_curator
+
+        self.curator = curator or get_curator()
 
     @property
     def index(self) -> BrainIndex:
@@ -368,6 +380,47 @@ class BrainService:
             )
             return self.gate.submit(proposal)
 
+    def add_document(
+        self,
+        identity: Identity,
+        *,
+        domain: str,
+        title: str,
+        content: str,
+        source_url: str | None = None,
+        tags: list[str] | None = None,
+    ) -> ProposalResult:
+        """Write a document LIVE into a domain the caller may write. A write grant is
+        trust, so this is direct with no review, exactly like a personal note; the
+        agent's ``propose_document`` path still stages to the review queue. Personal
+        targets delegate to :meth:`add_note`."""
+        if is_personal_domain(domain):
+            return self.add_note(
+                identity, title=title, content=content, source_url=source_url, tags=tags
+            )
+        with span(
+            "brain.add_document",
+            **{"brain.domain": domain, "brain.principal": identity.subject},
+        ):
+            writable = writable_domains(identity, self._policy_source())
+            if not writable:
+                raise WriteScopeError(
+                    "identity has no write access (policy grant or propose scope)"
+                )
+            if domain not in writable:
+                raise DomainNotAuthorized(domain)
+            proposal = build_proposal(
+                domain=domain,
+                title=title,
+                content=content,
+                author=identity.email or identity.subject,
+                source_url=source_url,
+                tags=tags,
+            )
+            result = self.note_gate.submit(proposal)  # note_gate = live corpus write
+            self.reindexer.trigger()
+            return result
+
     # --- Personal notes and dynamic sharing (the overlay) ------------------------
 
     def add_note(
@@ -437,6 +490,44 @@ class BrainService:
                 for score, a, b in pairs
             ]
 
+    def suggest_links_for_text(
+        self, identity: Identity, text: str, *, domain: str | None = None, top_k: int = 6
+    ) -> list[dict]:
+        """Existing documents most similar to a draft, to link from it. Scoped to a
+        domain the caller may read (links resolve within a domain), so the suggestions
+        are only ever documents the draft could actually link to."""
+        import numpy as np
+
+        from .linker import _doc_vectors
+
+        text = (text or "").strip()
+        if not text:
+            return []
+        index = self.index
+        personal = personal_domain(identity)
+        visible = self._visible_domains(identity)
+        if domain:
+            targets = {domain} if (domain in visible or domain == personal) else set()
+        else:
+            targets = set(visible) | ({personal} if personal else set())
+        candidate_ids = {d.doc_id for d in index.documents.values() if d.domain in targets}
+        if not candidate_ids:
+            return []
+        with span("brain.suggest_links_for_text", **{"brain.principal": identity.subject}):
+            vec = np.asarray(self.embeddings.embed([text])[0], dtype=np.float32)
+            norm = float(np.linalg.norm(vec))
+            vec = vec / norm if norm else vec
+            doc_vectors = _doc_vectors(index, candidate_ids)
+            scored = sorted(
+                ((float(np.dot(vec, v)), doc_id) for doc_id, v in doc_vectors.items()),
+                reverse=True,
+            )
+            return [
+                {"doc_id": doc_id, "title": index.documents[doc_id].title, "score": round(s, 3)}
+                for s, doc_id in scored[:top_k]
+                if s >= 0.35
+            ]
+
     @staticmethod
     def _strip_title(text: str, title: str) -> str:
         """Drop the leading ``# Title`` heading from a reconstructed note body, so a
@@ -477,14 +568,22 @@ class BrainService:
             wikilink = f"[[{target['title']}]]"
             body = self._strip_title(source["text"], source["title"])
             if wikilink in body:
-                return {"status": "exists", "source": source_id, "target": target_id,
-                        "detail": "these notes are already linked"}
+                return {
+                    "status": "exists",
+                    "source": source_id,
+                    "target": target_id,
+                    "detail": "these notes are already linked",
+                }
             new_body = self._append_related(body, f"- {wikilink}")
             result = self.add_note(
                 identity, title=source["title"], content=new_body, tags=source.get("tags")
             )
-            return {"status": "linked", "source": source_id, "target": target_id,
-                    "detail": result.detail}
+            return {
+                "status": "linked",
+                "source": source_id,
+                "target": target_id,
+                "detail": result.detail,
+            }
 
     def ingest_file(
         self,
@@ -533,7 +632,9 @@ class BrainService:
                 body = get_parser(mime).parse(raw, mime).body.strip()
             except NotImplementedError as exc:
                 raise ValueError(str(exc)) from exc
-            except (ValueError, KeyError, OSError) as exc:
+            except ValueError:
+                raise  # the parser already produced a clean, user-facing message
+            except Exception as exc:  # any other parser/library/cloud failure -> clean 400
                 raise ValueError(f"could not read {filename}: {exc}") from exc
             if not body:
                 raise ValueError(
@@ -559,14 +660,153 @@ class BrainService:
                 self.reindexer.trigger()  # searchable promptly, like add_note
                 return result
 
-        # A team domain: the reviewed write path enforces the write grant + domain.
-        return self.propose_document(
+        # A team domain: a write grant is trust, so this is a direct live write (the
+        # agent's propose path still goes to review). add_document enforces the grant.
+        return self.add_document(
             identity,
             domain=target,
             title=resolved_title,
             content=content,
             source_url=source_url or uri,
         )
+
+    # ---- Draft-first ingestion: URL / file / text -> editable draft (no write) ----
+    def _extract_upload_body(self, filename: str, content_base64: str) -> str:
+        """Decode + parse an uploaded file to its text body (Document AI for scanned
+        PDFs when configured). Shared by the draft flow; raises clean client errors."""
+        try:
+            raw = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise AccessError("content must be base64-encoded file bytes") from exc
+        ext = os.path.splitext(filename.lower())[1]
+        mime = _EXT_MIME.get(ext)
+        if not mime:
+            raise AccessError(
+                f"unsupported file type {ext or filename!r}; supported: .md .txt .html .pdf .docx"
+            )
+        from ..ingest.parsers import get_parser
+
+        try:
+            return get_parser(mime).parse(raw, mime).body.strip()
+        except NotImplementedError as exc:
+            raise ValueError(str(exc)) from exc
+        except ValueError:
+            raise  # the parser already produced a clean, user-facing message
+        except Exception as exc:  # any other parser/library/cloud failure -> clean 400
+            raise ValueError(f"could not read {filename}: {exc}") from exc
+
+    def _known_titles(self, identity: Identity) -> list[str]:
+        """Titles the caller can see, offered to the curator as wikilink targets."""
+        return [d["title"] for d in self.visible_documents(identity)][:60]
+
+    @staticmethod
+    def _first_heading(body: str) -> str:
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                return stripped.lstrip("#").strip()
+        return ""
+
+    def make_draft(
+        self,
+        identity: Identity,
+        *,
+        kind: str,
+        url: str | None = None,
+        text: str | None = None,
+        filename: str | None = None,
+        content_base64: str | None = None,
+        curate: bool = True,
+    ) -> dict:
+        """Turn a URL, file, or pasted text into an editable draft. Nothing is written:
+        the caller reviews/edits, then creates it via add_note or propose_document."""
+        from ..ingest.models import ParsedDoc
+
+        kind = (kind or "").lower()
+        source_url: str | None = None
+        default_title = ""
+        with span("brain.make_draft", **{"brain.kind": kind, "brain.principal": identity.subject}):
+            if kind == "url":
+                from .drafts import extract_main_text, fetch_url
+
+                if not url or not url.strip():
+                    raise ValueError("a URL is required")
+                raw, mime = fetch_url(url.strip())
+                if mime.split(";", 1)[0].strip().lower() in ("text/html", "application/xhtml+xml"):
+                    default_title, body = extract_main_text(raw)
+                else:
+                    body = raw.decode("utf-8", errors="replace")
+                source_url = url.strip()
+            elif kind == "text":
+                if not text or not text.strip():
+                    raise ValueError("some text is required")
+                body = text
+            elif kind == "file":
+                if not filename or not content_base64:
+                    raise ValueError("a file is required")
+                body = self._extract_upload_body(filename, content_base64)
+                default_title = _title_from_filename(filename)
+            else:
+                raise ValueError(f"unknown draft source {kind!r}")
+
+            body = body.strip()
+            if not body:
+                raise ValueError("no readable content was found at that source")
+
+            curated = False
+            tags: list[str] = []
+            if curate:
+                # Best-effort: a model error, safety block, or quota limit must never fail
+                # the draft, so on any failure we keep the extracted content un-curated
+                # (curated=false). A very large source is capped so it makes a smaller,
+                # faster call that is far less likely to hit the per-minute token quota;
+                # the prompt condenses it into a structured digest regardless.
+                source = body[:_CURATE_MAX_CHARS]
+                try:
+                    cleaned = self.curator.curate(
+                        ParsedDoc(body=source), self._known_titles(identity)
+                    ).body.strip()
+                    if cleaned and cleaned != source:
+                        cleaned, tags = self._split_tags(cleaned)
+                        body, curated = cleaned, True
+                except Exception:  # noqa: BLE001 - enhancement, never fatal to the draft
+                    curated = False
+
+            title = (default_title or self._first_heading(body) or "Untitled draft").strip()[:120]
+            return {
+                "title": title,
+                "content": body,
+                "source_url": source_url,
+                "curated": curated,
+                "tags": tags,
+            }
+
+    @staticmethod
+    def _split_tags(text: str) -> tuple[str, list[str]]:
+        """Split a trailing 'Tags: a, b, c' line off the curated markdown."""
+        lines = text.rstrip().splitlines()
+        if lines and lines[-1].strip().lower().startswith("tags:"):
+            raw = lines[-1].split(":", 1)[1]
+            tags = [t.strip().lower().lstrip("#") for t in raw.split(",") if t.strip()][:6]
+            return "\n".join(lines[:-1]).rstrip(), tags
+        return text, []
+
+    def simplify_text(self, identity: Identity, text: str) -> dict:
+        """Rewrite a draft in plain language for a newcomer (best-effort, on demand)."""
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("some text is required")
+        instruction = (
+            "Rewrite the following markdown in plain, simple language for someone new to "
+            "the topic. Keep the same structure, headings and facts, but use short "
+            "sentences and explain any jargon. Return only the markdown, no preamble."
+        )
+        with span("brain.simplify_text", **{"brain.principal": identity.subject}):
+            try:
+                rewritten = self.curator.rewrite(text[:_CURATE_MAX_CHARS], instruction).strip()
+                return {"content": rewritten or text, "simplified": bool(rewritten)}
+            except Exception:  # noqa: BLE001 - best-effort, never fatal
+                return {"content": text, "simplified": False}
 
     def _resolve_share_target(
         self, identity: Identity, domain: str | None, doc_id: str | None

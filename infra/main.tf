@@ -83,6 +83,20 @@ module "vertex" {
   project_id = var.project_id
 }
 
+# In-tenancy OCR for scanned/image PDFs uploaded through the Studio. A Google-managed
+# processor parses the bytes inside the tenancy; the brain reads its name from
+# BRAIN_DOCAI_PROCESSOR and routes scanned PDFs to it (text PDFs still use pypdf).
+resource "google_document_ai_processor" "ocr" {
+  # checkov:skip=CKV2_GCP_22: CMEK on the OCR processor adds a KMS key's cost and
+  # teardown complexity; the uploaded bytes are transient and never leave the tenancy.
+  # A controlled deployment would supply kms_key_name here (as with the registry CMEK).
+  project      = var.project_id
+  location     = "eu"
+  display_name = "${var.name_prefix}-ocr"
+  type         = "OCR_PROCESSOR"
+  depends_on   = [module.vertex]
+}
+
 module "observability" {
   source     = "./modules/observability"
   project_id = var.project_id
@@ -150,6 +164,13 @@ module "brain_service" {
     BRAIN_EMBEDDINGS  = "vertex"
     BRAIN_SYNTH       = "gemini"
     BRAIN_SYNTH_MODEL = var.agent_model
+    # Raw-to-wiki curation (the Studio "clean up with AI" toggle) runs an in-tenancy
+    # Gemini pass; on-demand per draft, so it costs nothing unless a caller uses it.
+    BRAIN_CURATE = "gemini"
+    # In-tenancy OCR for scanned/image PDFs: when set, uploads route to Document AI
+    # instead of the pypdf stub, which only reads text PDFs. The parser needs the
+    # full resource path (the resource's .name attribute is only the short id).
+    BRAIN_DOCAI_PROCESSOR = "projects/${var.project_id}/locations/eu/processors/${google_document_ai_processor.ocr.name}"
     # Google-signed OIDC verified against this service's own URL as the audience.
     BRAIN_AUTH_AUDIENCE = var.brain_audience
     BRAIN_AUTH_ISSUER   = "https://accounts.google.com"
