@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# npm noise
+npm-debug.log*
+.npm/
+
+# Remotion cache / bundle output
+.remotion/
+
+# Rendered stills; keep the final film (out/hyper-brain-promo.mp4) trackable if you want it.
+out/*.png
+
+# Intermediate (dry) audio from the synth step; the final public/soundtrack.mp3 is tracked.
+scratch*.wav
+*.scratch.wav
