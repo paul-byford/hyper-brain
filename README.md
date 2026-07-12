@@ -11,9 +11,9 @@ through one source of truth, and back *out* to every surface that needs it. The 
 repository serves an effortless personal demo and a cost- and security-controlled
 team deployment, with only configuration changing between them.
 
-https://github.com/user-attachments/assets/b3c244d5-f8c0-409f-9d4f-3a549889fe13
+https://github.com/user-attachments/assets/6f0f878a-d781-4c4b-a7de-ba6f46dbca70
 
-<sub>▶ A product film, under a minute. If the player does not appear, [watch it here](video/out/hyper-brain-promo.mp4). Built with Remotion; source in [`video/`](video/).</sub>
+<sub>▶ A product film, if the player does not appear [watch it here](video/out/hyper-brain-promo.mp4).</sub>
 
 - **Design rationale:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Intellectual lineage** (Karpathy's LLM wiki, Garry Tan's gbrain, and what we

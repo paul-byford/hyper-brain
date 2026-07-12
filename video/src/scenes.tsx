@@ -48,39 +48,46 @@ const rev = (frame: number, delay: number, dist = 14) => {
 export const SceneOpen: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const pop = spring({frame, fps, config: {damping: 140, mass: 0.8}});
-  const underline = interpolate(frame, [26, 54], [0, 1], {
+  // A gentle settle (never from zero), so frame 0 already shows the full logo lockup.
+  const settle = spring({frame, fps, config: {damping: 200}, durationInFrames: 34});
+  const scale = interpolate(settle, [0, 1], [0.985, 1]);
+  const underline = interpolate(frame, [6, 46], [0, 360], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
   return (
-    <Scene>
-      <div style={{display: "flex", flexDirection: "column", alignItems: "center", gap: 30}}>
-        <div style={{transform: `scale(${interpolate(pop, [0, 1], [0.6, 1])})`, opacity: pop}}>
-          <Glyph size={128} />
-        </div>
+    <Scene enterFade={false}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 30,
+          transform: `scale(${scale})`,
+        }}
+      >
+        <Glyph size={128} />
         <div
           style={{
-            ...useRise(10, 30),
             fontFamily: SANS,
             fontWeight: 800,
             fontSize: 128,
             letterSpacing: -4,
             color: C.ink,
+            transform: `translateY(${(1 - settle) * 6}px)`,
           }}
         >
           Hyper Brain
         </div>
         <div
           style={{
-            width: interpolate(underline, [0, 1], [0, 360]),
+            width: underline,
             height: 3,
             background: `linear-gradient(90deg, transparent, ${C.signal}, transparent)`,
           }}
         />
         <div
           style={{
-            ...useRise(22, 14),
             fontFamily: MONO,
             fontSize: 24,
             letterSpacing: 8,

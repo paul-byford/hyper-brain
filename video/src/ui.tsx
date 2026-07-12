@@ -57,15 +57,25 @@ export const Background: React.FC = () => (
 );
 
 // Every scene lives inside this: fades in at the top, out at the tail, so cuts breathe.
-export const Scene: React.FC<{children: React.ReactNode}> = ({children}) => {
+// The opening scene passes enterFade={false} so frame 0 is already full content (it is the
+// poster GitHub shows before play), and only the tail fade-out remains.
+export const Scene: React.FC<{children: React.ReactNode; enterFade?: boolean}> = ({
+  children,
+  enterFade = true,
+}) => {
   const frame = useCurrentFrame();
   const {durationInFrames} = useVideoConfig();
-  const opacity = interpolate(
-    frame,
-    [0, 14, durationInFrames - 16, durationInFrames],
-    [0, 1, 1, 0],
-    {extrapolateLeft: "clamp", extrapolateRight: "clamp"}
-  );
+  const opacity = enterFade
+    ? interpolate(
+        frame,
+        [0, 14, durationInFrames - 16, durationInFrames],
+        [0, 1, 1, 0],
+        {extrapolateLeft: "clamp", extrapolateRight: "clamp"}
+      )
+    : interpolate(frame, [durationInFrames - 16, durationInFrames], [1, 0], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      });
   return (
     <AbsoluteFill
       style={{
