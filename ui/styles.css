@@ -380,6 +380,15 @@
   }
   .pagetabs button.on { color: var(--ink); border-bottom-color: var(--signal); }
   .pagetabs button:not(.on):hover { color: var(--ink); }
+  /* Edge fade when the tab strip is scrolled and more tabs sit off-screen (mobile).
+     JS toggles can-left / can-right from the scroll position. */
+  .pagetabs.can-right { -webkit-mask-image: linear-gradient(to right, #000 80%, transparent); mask-image: linear-gradient(to right, #000 80%, transparent); }
+  .pagetabs.can-left { -webkit-mask-image: linear-gradient(to right, transparent, #000 20%); mask-image: linear-gradient(to right, transparent, #000 20%); }
+  .pagetabs.can-left.can-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent); }
+
+  /* "Show all" toggle for capped panels: only rendered on mobile (see media query). */
+  .panelmore { display: none; width: 100%; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--signal-ink); background: color-mix(in srgb, var(--signal) 7%, transparent); border: none; border-top: 1px solid var(--hair); padding: 9px; cursor: pointer; }
+  .panelmore:hover { background: color-mix(in srgb, var(--signal) 13%, transparent); }
 
   /* ---- Connections page ---- */
   .page[hidden] { display: none; }
@@ -1012,6 +1021,32 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
 
   /* Agent live-run controls stack cleanly. */
   .agentlive input { flex-basis: 100%; }
+
+  /* Overview flow panel: stack the title over its subtitle, and give the canvas a
+     tall (portrait) aspect so the JS reflows it top-to-bottom. */
+  .flowpanel > header, .graphpanel > header { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .flowwrap canvas { height: clamp(430px, 130vw, 520px); }
+
+  /* Explore: flatten the two columns into one flow and reorder, so a tapped result's
+     document sits just under search, the graph follows, then browse / personal, and
+     the Add-data panel comes last. */
+  .grid { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+  .col, .stage { display: contents; }
+  .searchpanel { order: 1; }
+  .docpanel { order: 2; }
+  .graphpanel { order: 3; }
+  .browserpanel { order: 4; }
+  .personalpanel { order: 5; }
+  .adddata { order: 6; }
+
+  /* Cap the Domains and Personal panels so they don't dominate the scroll; a fade and a
+     Show all button reveal the rest. */
+  .browserpanel:not(.expanded) .body, .personalpanel:not(.expanded) .body {
+    max-height: 210px; overflow: hidden;
+    -webkit-mask-image: linear-gradient(#000 72%, transparent);
+    mask-image: linear-gradient(#000 72%, transparent);
+  }
+  .panelmore { display: block; }
 }
 
 /* Very small phones: single-column card grids everywhere and denser chrome. */

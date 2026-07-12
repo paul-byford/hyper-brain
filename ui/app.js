@@ -1298,6 +1298,14 @@ function openDocument(id) {
   renderDoc(); renderBrowser();
   if (state.mode === "explore") setMode("read");
   else alpha = Math.max(alpha, 0.3);
+  // On mobile the document panel sits below the fold, so a tapped result would open
+  // unseen; bring it into view so it is obvious the document is now showing.
+  if (window.innerWidth <= 640) {
+    requestAnimationFrame(() => {
+      const dp = document.querySelector(".docpanel");
+      if (dp) dp.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 }
 function renderDoc() {
   const el = $("#doc"), head = $("#dochead"), close = $("#docclose");
@@ -1526,14 +1534,35 @@ function flowInit() {
     fparts.push({ e, t: (k / 2) + Math.random() * 0.4, s: 0.004 + Math.random() * 0.004 });
 }
 function flowGeom() {
-  const leftX = fW * 0.19, rightX = fW * 0.81, midX = fW * 0.5;
+  // On a phone the canvas is taller than it is wide; reflow the horizontal
+  // sources -> brain -> surfaces into a vertical stack so nothing clips or overflows.
+  const portrait = fH > fW * 1.05;
+  if (portrait) {
+    const bw = Math.min(fW * 0.66, 220), bh = Math.min(fH * 0.30, 150);
+    const cx = fW / 2, cy = fH / 2, bcx = cx;
+    const topY = fH * 0.11, botY = fH * 0.89;
+    const xOf = (i) => fW * 0.12 + i * (fW * 0.76 / (FN - 1));
+    return { portrait, bw, bh, cx, cy, bcx, topY, botY, xOf };
+  }
+  const leftX = fW * 0.19, rightX = fW * 0.81, midX = fW * 0.5, bcx = midX;
   const bw = Math.min(158, fW * 0.2), bh = Math.min(fH * 0.62, 196), cy = fH / 2;
   const yOf = (i) => fH * 0.14 + i * (fH * 0.72 / (FN - 1));
-  return { leftX, rightX, midX, bw, bh, cy, yOf };
+  return { portrait, leftX, rightX, midX, bcx, bw, bh, cy, yOf };
 }
 function flowEdge(e, g) {
+  if (g.portrait) {
+    if (e < FN) return { x1: g.xOf(e), y1: g.topY, x2: g.cx, y2: g.cy - g.bh / 2 };
+    return { x1: g.cx, y1: g.cy + g.bh / 2, x2: g.xOf(e - FN), y2: g.botY };
+  }
   if (e < FN) return { x1: g.leftX, y1: g.yOf(e), x2: g.midX - g.bw / 2, y2: g.cy };
   return { x1: g.midX + g.bw / 2, y1: g.cy, x2: g.rightX, y2: g.yOf(e - FN) };
+}
+// Bezier control points: the curve bends across the axis of flow (horizontal edges bow
+// out sideways; vertical portrait edges bow up/down), used for both stroke and particle.
+function flowCurve(edge, portrait) {
+  const { x1, y1, x2, y2 } = edge;
+  if (portrait) { const my = (y1 + y2) / 2; return { c1x: x1, c1y: my, c2x: x2, c2y: my }; }
+  const mx = (x1 + x2) / 2; return { c1x: mx, c1y: y1, c2x: mx, c2y: y2 };
 }
 function flowStep() { for (const p of fparts) { p.t += p.s; if (p.t > 1) p.t -= 1; } }
 function flowDraw() {
@@ -1541,21 +1570,22 @@ function flowDraw() {
   const g = flowGeom();
   const gold = cssVar("--signal"), pulse = cssVar("--pulse"), ink = cssVar("--ink"), muted = cssVar("--muted");
   for (let e = 0; e < 2 * FN; e++) {
-    const { x1, y1, x2, y2 } = flowEdge(e, g), mx = (x1 + x2) / 2;
-    fx.beginPath(); fx.moveTo(x1, y1); fx.bezierCurveTo(mx, y1, mx, y2, x2, y2);
+    const edge = flowEdge(e, g), c = flowCurve(edge, g.portrait);
+    fx.beginPath(); fx.moveTo(edge.x1, edge.y1);
+    fx.bezierCurveTo(c.c1x, c.c1y, c.c2x, c.c2y, edge.x2, edge.y2);
     fx.strokeStyle = withAlpha(pulse, 0.95); fx.lineWidth = 1; fx.stroke();
   }
-  const boxL = g.midX - g.bw / 2, boxT = g.cy - g.bh / 2;
+  const boxL = g.bcx - g.bw / 2, boxT = g.cy - g.bh / 2;
   fx.fillStyle = cssVar("--panel-2"); fx.strokeStyle = withAlpha(gold, 0.85); fx.lineWidth = 1.5;
   fx.fillRect(boxL, boxT, g.bw, g.bh);
   fx.strokeRect(boxL, boxT, g.bw, g.bh);
   fx.textAlign = "center"; fx.textBaseline = "middle";
   // Title along the top.
   fx.fillStyle = ink; fx.font = "700 12px " + fam();
-  fx.fillText("HYPER BRAIN", g.midX, boxT + 17);
+  fx.fillText("HYPER BRAIN", g.bcx, boxT + 17);
   // Inner knowledge graph in the middle band: the interconnected wiki.
-  const padX = 15, topH = 34, botH = 30;
-  const gx0 = boxL + padX, gy0 = boxT + topH, gw = g.bw - 2 * padX, gh = g.bh - topH - botH;
+  const padX = 15, topH = 32, botH = 28;
+  const gx0 = boxL + padX, gy0 = boxT + topH, gw = g.bw - 2 * padX, gh = Math.max(18, g.bh - topH - botH);
   const px = (n) => gx0 + n.x * gw, py = (n) => gy0 + n.y * gh;
   const t = performance.now() / 1000;
   for (const [a, b] of BRAIN_EDGES) {
@@ -1573,20 +1603,28 @@ function flowDraw() {
   }
   // Process caption along the bottom.
   fx.fillStyle = muted; fx.font = "9px " + monofam();
-  fx.fillText("INGEST · CURATE", g.midX, boxT + g.bh - 20);
-  fx.fillText("INDEX · SERVE", g.midX, boxT + g.bh - 9);
+  fx.fillText("INGEST · CURATE", g.bcx, boxT + g.bh - 20);
+  fx.fillText("INDEX · SERVE", g.bcx, boxT + g.bh - 9);
   for (const p of fparts) {
-    const { x1, y1, x2, y2 } = flowEdge(p.e, g), mx = (x1 + x2) / 2, t = p.t, u = 1 - t;
-    const x = u * u * u * x1 + 3 * u * u * t * mx + 3 * u * t * t * mx + t * t * t * x2;
-    const y = u * u * u * y1 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y2;
+    const edge = flowEdge(p.e, g), c = flowCurve(edge, g.portrait), t2 = p.t, u = 1 - t2;
+    const x = u * u * u * edge.x1 + 3 * u * u * t2 * c.c1x + 3 * u * t2 * t2 * c.c2x + t2 * t2 * t2 * edge.x2;
+    const y = u * u * u * edge.y1 + 3 * u * u * t2 * c.c1y + 3 * u * t2 * t2 * c.c2y + t2 * t2 * t2 * edge.y2;
     fx.beginPath(); fx.arc(x, y, 2.4, 0, 7); fx.fillStyle = withAlpha(gold, 0.95); fx.fill();
   }
-  fx.font = "600 11px " + fam();
-  for (let i = 0; i < FN; i++) {
-    flowNode(g.leftX, g.yOf(i), gold);
-    fx.textAlign = "right"; fx.fillStyle = ink; fx.fillText(SRC_L[i], g.leftX - 12, g.yOf(i));
-    flowNode(g.rightX, g.yOf(i), gold);
-    fx.textAlign = "left"; fx.fillStyle = ink; fx.fillText(SURF_L[i], g.rightX + 12, g.yOf(i));
+  if (g.portrait) {
+    fx.font = "600 9.5px " + fam(); fx.fillStyle = ink; fx.textAlign = "center";
+    for (let i = 0; i < FN; i++) {
+      flowNode(g.xOf(i), g.topY, gold); fx.fillText(SRC_L[i], g.xOf(i), g.topY - 11);
+      flowNode(g.xOf(i), g.botY, gold); fx.fillText(SURF_L[i], g.xOf(i), g.botY + 12);
+    }
+  } else {
+    fx.font = "600 11px " + fam();
+    for (let i = 0; i < FN; i++) {
+      flowNode(g.leftX, g.yOf(i), gold);
+      fx.textAlign = "right"; fx.fillStyle = ink; fx.fillText(SRC_L[i], g.leftX - 12, g.yOf(i));
+      flowNode(g.rightX, g.yOf(i), gold);
+      fx.textAlign = "left"; fx.fillStyle = ink; fx.fillText(SURF_L[i], g.rightX + 12, g.yOf(i));
+    }
   }
 }
 function flowNode(x, y, col) {
@@ -2348,6 +2386,13 @@ function mdToHtml(md) {
   return html;
 }
 
+// Show a fade at whichever edge of the tab strip has more tabs scrolled off, so the
+// user knows the scrollable nav continues past the screen (mobile).
+function updateTabFades() {
+  const t = $("#pagetabs"); if (!t) return;
+  t.classList.toggle("can-left", t.scrollLeft > 2);
+  t.classList.toggle("can-right", t.scrollLeft + t.clientWidth < t.scrollWidth - 2);
+}
 function setPage(p) {
   $("#page-explore").hidden = p !== "explore";
   $("#page-connect").hidden = p !== "connect";
@@ -2363,6 +2408,7 @@ function setPage(p) {
     // On mobile the tab bar is a horizontal scroll strip; keep the active tab visible.
     if (on) b.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
   }
+  requestAnimationFrame(updateTabFades);
   for (const el of document.querySelectorAll(".exp-only")) el.style.display = p === "explore" ? "" : "none";
   // Agents animation: run only while its page is visible.
   agentsActive = p === "agents";
@@ -2493,7 +2539,20 @@ function wireStatic() {
     else if (e.key === "Escape" && state.mode === "read") setMode("explore");
   });
 
-  window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); if (agentsActive) agentsResize(); });
+  window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); if (agentsActive) agentsResize(); updateTabFades(); });
+
+  // Nav scroll strip: keep the edge-fade affordance in sync as the user scrolls it.
+  const tabs = $("#pagetabs");
+  if (tabs) { tabs.addEventListener("scroll", updateTabFades, { passive: true }); requestAnimationFrame(updateTabFades); }
+
+  // Mobile: let the user expand the capped Domains / Personal panels to full height.
+  for (const btn of document.querySelectorAll(".panelmore")) {
+    btn.addEventListener("click", () => {
+      const panel = btn.closest(".panel"); if (!panel) return;
+      const expanded = panel.classList.toggle("expanded");
+      btn.textContent = expanded ? "Show less" : "Show all";
+    });
+  }
 }
 
 // ============================================================================
