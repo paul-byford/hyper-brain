@@ -224,7 +224,12 @@ class TokenIssuer:
                 "guest": True,
             }
         )
-        return {"access_token": token, "token_type": "Bearer", "expires_in": ttl, "scope": "read"}
+        return {
+            "access_token": token,
+            "token_type": "Bearer",  # nosec B105 - OAuth token-type label, not a secret
+            "expires_in": ttl,
+            "scope": "read",
+        }
 
     def mint_refresh_token(self, *, sub: str, email: str, client_id: str, scope: str) -> str:
         now = _now()
