@@ -1,12 +1,15 @@
 # hyper-brain
 
-A one-command **company brain**: a searchable, versioned knowledge base that your
-AI coding agents can query, with multiple knowledge domains isolated from each
-other and a data boundary that stays inside your own cloud tenancy.
+**Your company's shared memory.** Hyper Brain is an enterprise-grade,
+hyperscaler-native tool for **curating the context** your teams and your AI rely on,
+and then making that context useful everywhere work happens. It runs inside your own
+Google Cloud tenancy, is near-zero cost when idle, and tears down cleanly.
 
-One person runs a single command and gets a working brain on Google Cloud;
-teammates join cheaply. It is near-zero cost when idle and tears down cleanly. The
-same repository serves an effortless personal demo and a project that could be deployed inside a cost- and security-controlled environment, with only configuration changing between the two.
+Most context tools are built for a single operator. Hyper Brain is built for
+**teams**: a shared, governed memory where knowledge flows *in* from connectors,
+through one source of truth, and back *out* to every surface that needs it. The same
+repository serves an effortless personal demo and a cost- and security-controlled
+team deployment, with only configuration changing between them.
 
 ![Hyper Brain UI, the Connections page: an animated Sources to Hyper Brain to Surfaces flow, with source categories and the onboarding pipeline](docs/connections.png)
 
@@ -15,30 +18,70 @@ same repository serves an effortless personal demo and a project that could be d
   keep or replace): [`docs/LINEAGE.md`](docs/LINEAGE.md)
 - **Build plan and status:** [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
 - **Tracing walkthrough:** [`docs/observability.md`](docs/observability.md)
-- **Remote connectors (OAuth):** [`docs/oauth.md`](docs/oauth.md) — add the brain to Claude/ChatGPT by URL
+- **Remote connectors (OAuth):** [`docs/oauth.md`](docs/oauth.md): add the brain to Claude/ChatGPT by URL
+
+## What it does
+
+### One governed brain
+
+Knowledge flows **in** from connectors, through a single governed brain, and back
+**out** to every surface. One governed centre means one place to secure, audit and
+improve; every surface gets better the moment you add a source, with nothing to
+re-integrate.
+
+### Knowledge in: curate, don't just paste
+
+Bring content in from files, web pages, public git repositories, Microsoft Teams
+chats and meeting transcripts. The **Studio** turns a raw page, repo or transcript
+into a clean, well-structured note: an in-tenancy Gemini curation pass titles and
+sections it, tags it, and suggests `[[wikilinks]]` to your existing notes, and a long
+document can be split into a set of linked notes. Everything runs the same pipeline
+(fetch, parse, curate, land, index), is stamped with its provenance and de-duplicated
+by checksum, and team content is reviewed before it merges. Raw content is not
+context; the curation is the point.
+
+### Knowledge out: put the context to work
+
+Every surface talks to the same brain over the open **MCP** protocol: a coding
+assistant in the IDE, a chat or agent, the web app, or a tool you build. An assistant
+like Claude connects by **signing in with Google**: the brain runs an OAuth 2.1
+server with dynamic client registration and PKCE, so there is no token to paste. A
+multi-agent team, built on Google ADK, answers grounded, cited questions and can
+propose new notes, all scoped to exactly what the caller may see. The agent platform
+is itself governed: versioned, content-hashed prompts, a model inventory, and offline
+evals that assert both answer correctness and the domain-isolation boundary on every
+build.
+
+### Governed for teams
+
+Everyone signs in with Google, and every read and write is clamped to the domains
+that person may see. You get a private **personal** space to think in, a shared
+**commons** everyone can read (open to contribute, with rate-limiting and community
+moderation), and **team** domains whose content lands through review. Share a single
+note or a whole space with a colleague when you are ready. Clear boundaries are what
+make shared curation safe at scale.
 
 ## How it works, in one picture
 
 ```
-corpus (markdown + [[wikilinks]], under git)
-        |  index job: chunk, embed (Vertex AI, in-tenancy), build artefact
-        v
-index artefact per domain in Google Cloud Storage
-        ^  loaded in memory on cold start
-        |
-Brain service (Cloud Run, scale-to-zero)  --- MCP over HTTP --->  agents
-  retrieval: semantic + keyword + link graph, fused
-  auth: Cloud Run IAM at the edge + verified OIDC + per-domain ACL in-app
-        ^
-        |  consumed by
-Google ADK agent (Gemini on Vertex)  +  Brain Explorer web UI
+  CONNECTORS (in)              ONE GOVERNED BRAIN              SURFACES (out)
+  ----------------             ------------------              --------------
+  files, web, public git  ==>  Cloud Run, scale-to-zero   ==>  IDEs & assistants (Claude)
+  Microsoft Teams chats        hybrid retrieval + Gemini        the Google ADK agent
+  meeting transcripts          answers, domain-scoped ACL       the web app, your own apps
+
+  Studio curates each          index + embeddings in your       every surface over MCP,
+  source into provenance-      own bucket, in-tenancy Vertex,   each caller signed in
+  stamped, [[linked]] markdown loaded on cold start             with Google
 ```
 
-Knowledge is plain markdown in this repo, so changing what the brain knows is a
-reviewable, revertible pull request. There is no database running when nobody is
-querying: the index is a file in your own bucket, loaded into a scale-to-zero
-container. Embeddings and answer synthesis use first-party Vertex AI models inside
-your own tenancy and region, so sensitive content never goes to a third party.
+Knowledge is plain, provenance-stamped markdown with `[[wikilinks]]`, so what the
+brain knows is a reviewable, revertible change. There is no database running when
+nobody is querying: the index is a file in your own bucket, loaded into a
+scale-to-zero container. Embeddings and answer synthesis use first-party Vertex AI
+models inside your own tenancy and region, so sensitive content never goes to a third
+party. One endpoint, entered by Google sign-in and clamped by policy, safely serves
+an IDE, an assistant and the web app at once.
 
 ## The two audiences, one codebase
 
@@ -98,33 +141,35 @@ own `gcloud`, so no redeploy is needed. (Personal-space notes written with `add_
 are owned by the caller, so they skip this queue and land live in the author's
 `personal:` domain, appearing after the next index build.)
 
-## Project status
+## What's built
 
-This repository is being built in the phases described in
-[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md). Progress:
+Everything above runs, is validated in CI with no cloud and no cost, and deploys to
+Google Cloud with `./brain up`:
 
-- **Implemented:** the offline retrieval core (chunking, `[[wikilink]]` graph,
-  hybrid semantic + keyword + link retrieval with reciprocal-rank fusion, `search`
-  and `answer` modes, per-domain isolation); the adapter-based ingestion pipeline
-  (local, web and git adapters, markdown/HTML parsers, provenance stamping,
-  idempotent landing); the MCP serving layer with OIDC-style token auth,
-  server-side domain-ACL enforcement, and the gated `propose_document` write path
-  that lands proposals as a reviewable branch; the Google ADK demo agent with its
-  free, offline eval tier (tool-trajectory and ROUGE metrics, plus an isolation
-  eval); the Terraform for both profiles (Cloud Run, buckets, IAM, Artifact
-  Registry, Vertex enablement, and the controlled-only VPC-SC perimeter and
-  Workforce Identity behind toggles) with checkov + conftest policy-as-code; the
-  two starter corpora and the full test suite; the one-command `brain` /
-  `brain.ps1` entrypoint (preflight, provision, deploy, seed, connect) with its
-  local subcommands; and the Brain Explorer UI (a dependency-free SPA: wikilink
-  graph coloured by domain, domain browser, search/answer, and a live
-  identity/isolation panel). All of it runs, and is validated in CI, with no cloud
-  and no cost.
-- **Remaining:** observability wiring, richer corpus, and the end-to-end
-  verification rehearsal (phases 8-9).
+- **Curation:** the Studio (URL, git repo, Microsoft Teams export, meeting
+  transcript, file, or pasted text), in-tenancy Gemini raw-to-wiki curation with
+  auto-tagging and suggested `[[wikilinks]]`, split-into-linked-notes, and edit /
+  delete. Batch ingestion adapters (local, web, git) land the same way.
+- **Retrieval & answers:** hybrid semantic + keyword + link-graph retrieval with
+  reciprocal-rank fusion; grounded, cited Gemini answers with an honest gap
+  statement; answer and embedding caching to stay within shared quota.
+- **Serving & access:** the MCP server with Google OIDC plus a full OAuth 2.1
+  authorization server (dynamic client registration, PKCE, Google-brokered login);
+  per-domain ACL enforced server-side; personal / commons / team spaces; note and
+  whole-space sharing; rate-limiting and community moderation (report / remove).
+- **The agent platform:** the Google ADK multi-agent team over the brain's tools;
+  versioned, content-hashed prompts and a model inventory; and offline evals
+  (tool-trajectory, ROUGE, and a domain-isolation boundary eval).
+- **Infrastructure:** Terraform for both profiles (Cloud Run services + jobs,
+  private buckets, least-privilege IAM per workload, Artifact Registry, Vertex,
+  Secret Manager, Cloud Trace) with the controlled-only VPC-SC perimeter behind a
+  toggle, and checkov + conftest policy-as-code.
+- **The web app:** the dependency-free Brain Explorer SPA: the wikilink knowledge
+  graph, search and grounded answers, Studio, sharing, review and moderation, and a
+  replayable guided tour that onboards a new user to the product.
 
-The `brain up` experience above is the target; today you can build and query the
-brain locally (see below).
+Design and build detail live in [`ARCHITECTURE.md`](ARCHITECTURE.md) and
+[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md).
 
 ## Getting started
 
