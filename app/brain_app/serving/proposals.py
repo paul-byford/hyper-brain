@@ -55,12 +55,14 @@ def build_proposal(
     now: str | None = None,
     run_id: str | None = None,
     tags: list[str] | None = None,
+    doc_type: str = "Note",
 ) -> Proposal:
     """Stamp an agent-authored document into a landable proposal.
 
     Slug and stamping match the batch pipeline, so a proposal and an ingested
     document are indistinguishable once landed, and the ``_slugify`` sanitisation
-    is the same first line of the domain-escape defence.
+    is the same first line of the domain-escape defence. ``doc_type`` is the OKF
+    concept type (defaults to "Note").
     """
     resolved_title = title.strip() or _title_from(author)
     canonical = _canonical_body(content)
@@ -76,6 +78,7 @@ def build_proposal(
         checksum=checksum,
         run_id=run_id or _new_run_id(),
         canonical_body=canonical,
+        doc_type=doc_type,
     )
     return Proposal(
         domain=domain,

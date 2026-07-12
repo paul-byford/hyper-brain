@@ -39,6 +39,12 @@ export const api = (apiUrl) => ({
   remove: (doc_id) => call(apiUrl, "/api/delete", { method: "POST", body: { doc_id } }),
   report: (doc_id, reason) => call(apiUrl, "/api/report", { method: "POST", body: { doc_id, reason } }),
   reports: () => call(apiUrl, "/api/reports").then((d) => d.reports),
+  exportBundle: async (domain) => {
+    const q = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+    const resp = await fetch(`${apiUrl}/api/export${q}`, { headers: { authorization: `Bearer ${token()}` } });
+    if (!resp.ok) throw new Error(`export failed (${resp.status})`);
+    return resp.blob();
+  },
   resolveReport: (doc_id, remove) =>
     call(apiUrl, "/api/report/resolve", { method: "POST", body: { doc_id, remove } }),
   shares: () => call(apiUrl, "/api/shares"),
@@ -46,7 +52,6 @@ export const api = (apiUrl) => ({
   unshare: (payload) => call(apiUrl, "/api/unshare", { method: "POST", body: payload }),
   proposals: () => call(apiUrl, "/api/proposals").then((d) => d.proposals),
   accept: (name) => call(apiUrl, "/api/accept", { method: "POST", body: { name } }),
-  agentRun: (query) => call(apiUrl, "/api/agent/run", { method: "POST", body: { query } }),
   linkSuggestions: () => call(apiUrl, "/api/link/suggestions").then((d) => d.suggestions),
   link: (source, target) => call(apiUrl, "/api/link", { method: "POST", body: { source, target } }),
   linkSuggestFor: (text, domain) =>

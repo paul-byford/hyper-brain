@@ -1,4 +1,5 @@
 ---
+type: Guide
 title: Security and privacy basics
 domain: commons
 tags:

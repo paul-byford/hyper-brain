@@ -74,14 +74,17 @@ def _stamp(
     checksum: str,
     run_id: str,
     canonical_body: str,
+    doc_type: str = "Note",
 ) -> str:
-    """Build the landed markdown: authoritative frontmatter plus body.
+    """Build the landed markdown: Open Knowledge Format frontmatter plus body.
 
-    Provenance (``source``, ``source_url``, ``fetched_at``, ``checksum``,
-    ``ingest_run``) is stamped so a reader and the Explorer UI can see where a
-    fact came from, and so re-ingestion is idempotent by ``checksum``.
+    Leads with OKF's one required field, ``type``, then ``title`` / ``tags``; our
+    provenance (``source``, ``source_url``, ``fetched_at``, ``checksum``,
+    ``ingest_run``) rides along as OKF producer extensions, so a reader and the
+    Explorer UI can see where a fact came from and re-ingestion stays idempotent by
+    ``checksum``. The result is a conformant OKF concept (see docs/LINEAGE.md).
     """
-    meta: dict[str, object] = {"title": title, "domain": domain}
+    meta: dict[str, object] = {"type": doc_type or "Note", "title": title, "domain": domain}
     if tags:
         meta["tags"] = tags
     meta["source"] = source_id
@@ -149,6 +152,9 @@ def _corpus_store(corpus_dir: str | Path):
 # A landed document is always <domain>/<slug>.md with a clean single-segment slug.
 _SAFE_SLUG = re.compile(r"[a-z0-9-]+")
 
+# Map an ingest adapter to a sensible Open Knowledge Format concept ``type``.
+_OKF_TYPE = {"local": "Note", "web": "Web article", "git": "Reference"}
+
 
 def _land(
     parsed: ParsedDoc,
@@ -200,6 +206,7 @@ def _land(
         checksum=checksum,
         run_id=run_id,
         canonical_body=canonical,
+        doc_type=_OKF_TYPE.get(source.type, "Note"),
     )
     store.write_text(rel, content)
     return LandResult(doc_id, store.path(rel), status, checksum)

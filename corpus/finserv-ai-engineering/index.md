@@ -1,4 +1,5 @@
 ---
+type: Index
 title: AI engineering for financial services, overview
 domain: finserv-ai-engineering
 tags: [overview, index]

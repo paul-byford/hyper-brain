@@ -1,4 +1,5 @@
 ---
+type: Guide
 title: Sharing and collaboration
 domain: commons
 tags:

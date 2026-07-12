@@ -17,6 +17,9 @@ class Document:
     domain: str
     title: str
     path: str
+    # Open Knowledge Format concept type (the one field OKF requires): what kind of
+    # concept this note is (e.g. "Note", "Reference", "Web article", "Transcript").
+    type: str | None = None
     tags: list[str] = field(default_factory=list)
     # Raw wikilink targets as written in the document, before resolution.
     raw_links: list[str] = field(default_factory=list)

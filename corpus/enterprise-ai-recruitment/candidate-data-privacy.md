@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Candidate data privacy and consent
 domain: enterprise-ai-recruitment
 tags: [privacy, consent, data-protection]

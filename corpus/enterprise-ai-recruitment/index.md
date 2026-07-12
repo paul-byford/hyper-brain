@@ -1,4 +1,5 @@
 ---
+type: Index
 title: AI recruitment for enterprises, overview
 domain: enterprise-ai-recruitment
 tags: [overview, index]

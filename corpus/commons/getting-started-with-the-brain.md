@@ -1,4 +1,5 @@
 ---
+type: Guide
 title: Getting started with the brain
 domain: commons
 tags:

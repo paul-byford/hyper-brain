@@ -1,4 +1,5 @@
 ---
+type: Guide
 title: Writing good notes
 domain: commons
 tags:

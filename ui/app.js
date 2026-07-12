@@ -217,9 +217,9 @@ async function bootLive(me, docs) {
   fillMcp();
   // Note: initPersonal() (the demo simulator + its handlers) is deliberately NOT
   // called in live mode; wireLive() owns the live personal actions instead.
-  $("#sharespace").hidden = true; // demo share flow needs simulated principals
   wireStatic();
   wireLive();
+  await loadLiveShares(); // real grants, for the per-note "Shared · N" counts
 
   resize();
   if (W > 0) { seed(); graphSized = true; }
@@ -331,9 +331,13 @@ function renderDocArticle(doc) {
     if (b.startsWith("# ")) return `<h3>${esc(b.slice(2))}</h3>`;
     return `<p>${esc(stripWiki(b))}</p>`;
   });
+  // OKF: the concept type chip and the concept id (path minus .md = our doc_id).
+  const typeChip = doc.type
+    ? `<span class="okftype" title="Open Knowledge Format concept type">${esc(doc.type)}</span>` : "";
   const tags = (doc.tags && doc.tags.length)
     ? `<div class="chips" style="margin:2px 0 10px">${doc.tags.map((t) => `<span class="chip tag">#${esc(t)}</span>`).join("")}</div>` : "";
   let prov = `<div class="provenance"><span class="dot" style="background:var(${domVar(doc.domain)})"></span>${esc(doc.domain)}`;
+  prov += ` · <span class="okfid mono" title="OKF concept id">${esc(doc.doc_id || "")}</span>`;
   if (doc.source) prov += ` · source: ${esc(doc.source)}`;
   if (doc.fetched_at) prov += ` · fetched ${esc(doc.fetched_at)}`;
   prov += "</div>";
@@ -347,7 +351,7 @@ function renderDocArticle(doc) {
   // A just-saved edit is shown optimistically before the index catches up.
   const pending = doc._pending
     ? `<div class="docpending">✎ Showing your saved edit · indexing now, searchable in a few minutes</div>` : "";
-  el.innerHTML = `<article>${bar}<h3>${esc(doc.title)}</h3>${pending}${tags}${blocks.slice(1).join("")}${prov}</article>`;
+  el.innerHTML = `<article>${bar}<div class="doctitlerow"><h3>${esc(doc.title)}</h3>${typeChip}</div>${pending}${tags}${blocks.slice(1).join("")}${prov}</article>`;
   const eb = $("#docedit"); if (eb) eb.addEventListener("click", () => renderDocEditor(doc));
   const db = $("#docdelete"); if (db) db.addEventListener("click", () => deleteOpenDoc(doc));
   const rb = $("#docreport"); if (rb) rb.addEventListener("click", () => reportOpenDoc(doc));
@@ -440,7 +444,11 @@ function renderPersonalLive() {
       const b = document.createElement("button"); b.className = "pnote-title";
       b.innerHTML = `<span class="dot personal-dot"></span><span class="t">${esc(n.title)}</span>`;
       b.addEventListener("click", () => openDocument(n.doc_id));
-      row.appendChild(b); li.appendChild(row); list.appendChild(li);
+      const sh = document.createElement("button"); sh.className = "ghostbtn tiny";
+      const cnt = (LIVE_SHARES.granted || []).filter((s) => s.doc_id === n.doc_id).length;
+      sh.textContent = cnt ? `Shared · ${cnt}` : "Share";
+      sh.addEventListener("click", (e) => { e.stopPropagation(); openShare({ scope: "doc", docId: n.doc_id, title: n.title }); });
+      row.appendChild(b); row.appendChild(sh); li.appendChild(row); list.appendChild(li);
     }
   }
   // Shared-with-you, from the server's view of the caller.
@@ -625,6 +633,31 @@ function broadcastPending(title) { broadcast("pending", { title }); }
 function wireLive() {
   $("#addnote").addEventListener("click", () => { $("#notemodal").hidden = false; $("#notetitle").focus(); });
   $("#suggestlinks").addEventListener("click", loadLinkSuggestions);
+
+  // Sharing (live): the same modal the demo uses, wired to the real share API.
+  $("#sharespace").addEventListener("click", () => openShare({ scope: "space" }));
+  $("#sharedo").addEventListener("click", doShare);
+  $("#sharewithemail").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doShare(); } });
+  document.querySelectorAll("[data-close-share]").forEach((el) => el.addEventListener("click", closeShare));
+
+  // OKF: export the caller's visible corpus as a portable Open Knowledge Format bundle.
+  const okfx = $("#okfexport");
+  if (okfx) {
+    okfx.hidden = false;
+    okfx.addEventListener("click", async () => {
+      const orig = okfx.textContent; okfx.disabled = true; okfx.textContent = "Exporting…";
+      try {
+        const blob = await API.exportBundle();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "hyper-brain-okf-bundle.zip";
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        okfx.textContent = "Exported ✓"; setTimeout(() => { okfx.textContent = orig; }, 1600);
+      } catch (e) {
+        okfx.textContent = orig; window.alert(e.message || String(e));
+      } finally { okfx.disabled = false; }
+    });
+  }
   $("#linkbtn").addEventListener("click", () => {
     const s = $("#linksrc").value, t = $("#linkdst").value;
     if (s && t && s !== t) doLink(s, t);
@@ -980,9 +1013,15 @@ function renderLegend() {
 //  Kept separate from the index/graph so it never affects isolation rendering:
 //  it demonstrates the model the deployed brain enforces server-side.
 // ============================================================================
-const PERSONAL = {};        // principal -> [{ id, title, body }]
-let SHARES = [];            // { by, to, scope: "space"|"doc", docId, docTitle, write }
+const PERSONAL = {};        // principal -> [{ id, title, body }]  (demo simulator)
+let SHARES = [];            // demo: { by, to, scope: "space"|"doc", docId, docTitle, write }
 let shareCtx = null;        // the pending share target while the modal is open
+// Live: the real shares the caller has granted / received, from /api/shares.
+let LIVE_SHARES = { granted: [], received: [] };
+async function loadLiveShares() {
+  try { LIVE_SHARES = await API.shares(); }
+  catch { LIVE_SHARES = { granted: [], received: [] }; }
+}
 
 const personalDomainId = (p) => `personal:${p}`;
 
@@ -1060,16 +1099,33 @@ function openShare(ctx) {
   $("#sharelead").textContent = ctx.scope === "space"
     ? "Everyone you pick can read every note in your personal space, until you revoke it."
     : `Share "${ctx.title}". They see just this note, alongside their own domains.`;
-  const sel = $("#sharewith"); sel.innerHTML = "";
+  $("#sharewrite").checked = false;
+  const status = $("#sharestatus"); if (status) status.textContent = "";
+  if (LIVE) {
+    // Live: share with a colleague by email; no fixed roster to pick from.
+    $("#sharewith").hidden = true;
+    const inp = $("#sharewithemail"); inp.hidden = false; inp.value = "";
+    $("#sharemodal").hidden = false;
+    loadLiveShares().then(renderShareList);
+    requestAnimationFrame(() => inp.focus());
+    return;
+  }
+  const sel = $("#sharewith"); sel.hidden = false; $("#sharewithemail").hidden = true;
+  sel.innerHTML = "";
   for (const p of PRINCIPALS) {
     if (p.id === state.principal) continue;
     const o = document.createElement("option"); o.value = p.id; o.textContent = friendly(p.id); sel.appendChild(o);
   }
-  $("#sharewrite").checked = false;
   renderShareList();
   $("#sharemodal").hidden = false;
 }
 function closeShare() { $("#sharemodal").hidden = true; shareCtx = null; }
+// The live shares matching the open modal's target (a space grant, or this doc).
+function liveCtxShares() {
+  const pd = ME && ME.personal && ME.personal.domain;
+  return (LIVE_SHARES.granted || []).filter((s) =>
+    shareCtx.scope === "space" ? (!s.doc_id && s.domain === pd) : s.doc_id === shareCtx.docId);
+}
 
 function currentCtxShares() {
   return SHARES.filter((s) => s.by === state.principal &&
@@ -1077,24 +1133,50 @@ function currentCtxShares() {
 }
 function renderShareList() {
   const wrap = $("#sharelistwrap"); if (!wrap) return;
-  const existing = currentCtxShares();
+  const existing = LIVE ? liveCtxShares() : currentCtxShares();
+  const idOf = (s) => LIVE ? s.principal : s.to;          // the raw principal to revoke
+  const label = (s) => LIVE ? s.principal : friendly(s.to); // the display name
   if (!existing.length) { wrap.innerHTML = '<p class="addnote" style="margin:12px 0 0">Not shared with anyone yet.</p>'; return; }
   let html = '<div class="sharedhead" style="margin-top:14px">Currently shared with</div><ul class="sharelist">';
   for (const s of existing) {
-    html += `<li><span class="dot shared-dot"></span>${esc(friendly(s.to))}${s.write ? " · write" : ""}<button class="ghostbtn tiny" data-revoke="${esc(s.to)}">Revoke</button></li>`;
+    html += `<li><span class="dot shared-dot"></span>${esc(label(s))}${s.write ? " · write" : ""}<button class="ghostbtn tiny" data-revoke="${esc(idOf(s))}">Revoke</button></li>`;
   }
   html += "</ul>";
   wrap.innerHTML = html;
-  wrap.querySelectorAll("[data-revoke]").forEach((btn) => btn.addEventListener("click", () => {
-    const to = btn.dataset.revoke;
-    SHARES = SHARES.filter((s) => !(s.by === state.principal && s.to === to &&
-      (shareCtx.scope === "space" ? s.scope === "space" : s.scope === "doc" && s.docId === shareCtx.docId)));
-    renderShareList(); renderPersonal();
-  }));
+  wrap.querySelectorAll("[data-revoke]").forEach((btn) => btn.addEventListener("click", () => revokeShare(btn.dataset.revoke)));
 }
-function doShare() {
+async function revokeShare(principal) {
+  if (LIVE) {
+    const pd = ME && ME.personal && ME.personal.domain;
+    const payload = shareCtx.scope === "space" ? { principal, domain: pd } : { principal, doc_id: shareCtx.docId };
+    try { await API.unshare(payload); await loadLiveShares(); renderShareList(); renderPersonal(); }
+    catch (e) { const st = $("#sharestatus"); if (st) st.textContent = e.message || String(e); }
+    return;
+  }
+  SHARES = SHARES.filter((s) => !(s.by === state.principal && s.to === principal &&
+    (shareCtx.scope === "space" ? s.scope === "space" : s.scope === "doc" && s.docId === shareCtx.docId)));
+  renderShareList(); renderPersonal();
+}
+async function doShare() {
+  if (!shareCtx) return;
+  if (LIVE) {
+    const to = $("#sharewithemail").value.trim();
+    const status = $("#sharestatus");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { if (status) status.textContent = "Enter a valid email address."; return; }
+    const write = $("#sharewrite").checked, pd = ME && ME.personal && ME.personal.domain;
+    const payload = shareCtx.scope === "space"
+      ? { principal: to, domain: pd, write } : { principal: to, doc_id: shareCtx.docId, write };
+    const btn = $("#sharedo"); btn.disabled = true; if (status) status.textContent = "Sharing…";
+    try {
+      await API.share(payload);
+      $("#sharewithemail").value = ""; if (status) status.textContent = `Shared with ${to}.`;
+      await loadLiveShares(); renderShareList(); renderPersonal();
+    } catch (e) { if (status) status.textContent = e.message || String(e); }
+    finally { btn.disabled = false; }
+    return;
+  }
   const to = $("#sharewith").value;
-  if (!to || !shareCtx) return;
+  if (!to) return;
   const write = $("#sharewrite").checked;
   // Replace any existing grant to the same principal for this target (idempotent).
   SHARES = SHARES.filter((s) => !(s.by === state.principal && s.to === to &&
@@ -2183,9 +2265,10 @@ async function createDraft() {
   const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
   const src = studioDraft.source_url || undefined;
   const tags = draftTags();
+  const type = studioDraft.type || undefined; // OKF concept type suggested by the source
   const btn = $("#draftcreate"); btn.disabled = true;
   try {
-    await API.create({ domain: target, title, content, source_url: src, tags });
+    await API.create({ domain: target, title, content, source_url: src, tags, type });
     if (target === pd) {
       PENDING_NOTES.unshift({ title, status: "saving" });
       renderPersonal(); renderIndexStatus();
@@ -2340,10 +2423,11 @@ async function createSplitAll() {
   const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
   const src = studioDraft ? studioDraft.source_url || undefined : undefined;
   const tags = draftTags();
+  const type = studioDraft ? studioDraft.type || undefined : undefined;
   const btn = $("#draftcreate"); btn.disabled = true;
   try {
     for (const item of splitItems) {
-      await API.create({ domain: target, title: item.title, content: assembleSplitItem(item), source_url: src, tags });
+      await API.create({ domain: target, title: item.title, content: assembleSplitItem(item), source_url: src, tags, type });
     }
     const all = splitItems.map((x) => x.title), n = splitItems.length;
     if (target === pd) {
@@ -2578,6 +2662,12 @@ const TOUR = [
     title: "Bring knowledge in",
     body: "Onboard content from files, web pages, public git repos, Microsoft Teams chats and meeting transcripts. Every connector lands content through the same pipeline into a chosen domain.",
     why: "Knowledge lives everywhere, including the tacit kind only ever said out loud in a call. Meeting it where it already is is what makes a shared memory complete.",
+  },
+  {
+    page: "connect", target: ".okfnote",
+    title: "Stored in an open format",
+    body: "Whatever comes in is written in Google's <b>Open Knowledge Format</b>: plain markdown + YAML frontmatter under git. Each note is a portable OKF <b>concept</b> with a <b>type</b>, and you can export any space as a bundle other tools and agents can read.",
+    why: "Your curated context is never locked in. An open, vendor-neutral standard keeps it portable, auditable, and interoperable with the wider OKF ecosystem, including Google's Knowledge Catalog.",
   },
   {
     page: "connect", target: ".pipelinepanel",

@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: In-tenancy vector search and embeddings
 domain: finserv-ai-engineering
 tags: [embeddings, vector-search, data-boundary]

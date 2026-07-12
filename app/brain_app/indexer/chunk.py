@@ -104,12 +104,15 @@ def load_document(path: Path, domain_hint: str | None = None) -> tuple[Document,
         domain=str(domain),
         title=title,
         path=str(path),
+        type=_opt_str(meta.get("type")),
         tags=tags,
         raw_links=extract_wikilinks(body),
         links=[],
         source=_opt_str(meta.get("source")),
-        source_url=_opt_str(meta.get("source_url")),
-        fetched_at=_opt_str(meta.get("fetched_at")),
+        # Read our provenance keys, falling back to OKF's own field names so an
+        # externally-authored OKF bundle (which uses resource / timestamp) imports too.
+        source_url=_opt_str(meta.get("source_url") or meta.get("resource")),
+        fetched_at=_opt_str(meta.get("fetched_at") or meta.get("timestamp")),
     )
     return document, body
 

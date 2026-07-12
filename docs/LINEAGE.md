@@ -213,15 +213,53 @@ carry the operational substrate we set out to replace.
 
 ---
 
-## 4. The one-line summary of the lineage
+## 4. Open Knowledge Format: the same pattern, now a standard
+
+In 2026 Google published the **Open Knowledge Format** (OKF), a minimal, open,
+vendor-neutral specification for portable, agent-readable knowledge. Its shape is
+exactly the foundation this lineage starts from: a `git`-shippable directory tree of
+markdown files, each a **concept** with YAML frontmatter whose one required field is
+`type`, related by ordinary links that form a directed graph. In Google's own framing
+it is "a format, not another service", and it explicitly cites Karpathy's LLM-wiki
+insight that agents can maintain the bookkeeping while humans curate the content.
+
+**Why this matters to us.** OKF is the standardisation of the very pattern we already
+build on. Hyper Brain's corpus was, before we had a name for it, an OKF bundle in all
+but the one required field: markdown under git, frontmatter provenance, `[[wikilinks]]`,
+a domain per directory, `index.md` listings, and a document id (`domain/slug`) that is
+exactly OKF's concept id. So we embrace it directly:
+
+- **We conform.** Every note is stamped with an OKF `type` (the one field we were
+  missing); our provenance rides along as OKF producer extensions. A CI check
+  (`brain_app.okf.validate_bundle`) fails the build if any concept lacks parseable
+  frontmatter with a non-empty `type`.
+- **We interoperate both ways.** Any space exports as a clean OKF bundle (OKF-native
+  `resource` / `timestamp` fields, `[[wikilinks]]` rewritten as standard markdown
+  links), ready for another OKF tool or Google's Knowledge Catalog; and we consume
+  external OKF bundles through the same ingestion path, since a bundle is just a git
+  repo or a set of markdown files our web / git / file adapters already read.
+- **We keep our additions.** OKF is deliberately silent on retrieval, access control
+  and review; those are exactly the layers we take from gbrain and add ourselves. OKF
+  governs the *format at rest*; our hybrid retrieval, per-domain isolation, and review
+  gate govern how that format is served and grown.
+
+So the lineage now has a formal, open anchor: Karpathy proved the pattern, gbrain proved
+it needs retrieval and multi-user structure, and OKF makes the underlying format a
+shared standard that Hyper Brain is a governed, hyperscaler-native implementation of,
+with no lock-in in either direction.
+
+---
+
+## 5. The one-line summary of the lineage
 
 Karpathy proved markdown plus git plus an LLM is a knowledge base. gbrain proved
 that base needs real hybrid retrieval and a synthesis layer to be useful at scale
-and across a team. We take both lessons and re-seat them on a scale-to-zero,
+and across a team. Google's Open Knowledge Format makes that base a portable, open
+standard. We take all three lessons and re-seat them on a scale-to-zero,
 in-tenancy, IAM-secured substrate so the same artefact is a free personal demo
-and a defensible bank-shaped design; we feed it through an adapter-based,
-review-gated ingestion pipeline so new knowledge enters in interesting ways
-without escaping review; and we put a Google ADK agent and a graph UI in front of
+and a defensible bank-shaped design; we store it as conformant OKF, feed it through an
+adapter-based, review-gated ingestion pipeline so new knowledge enters in interesting
+ways without escaping review; and we put a Google ADK agent and a graph UI in front of
 it so the demo is something you can watch work.
 
 ---
@@ -229,6 +267,10 @@ it so the demo is something you can watch work.
 ## Sources
 
 - gbrain repository, Garry Tan: <https://github.com/garrytan/gbrain>
+- Open Knowledge Format (spec + reference tooling), Google Cloud:
+  <https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf>
+- "How the Open Knowledge Format can improve data sharing", Google Cloud blog:
+  <https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing>
 - "Karpathy's Instructions for Building an AI-Driven Second Brain", Techstrong.ai:
   <https://techstrong.ai/features/karpathys-instructions-for-building-an-ai-driven-second-brain/>
 - "What Is Andrej Karpathy's LLM Wiki?", MindStudio:

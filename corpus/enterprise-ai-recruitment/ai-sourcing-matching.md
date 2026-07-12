@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: AI sourcing and candidate matching
 domain: enterprise-ai-recruitment
 tags: [sourcing, matching, ranking]

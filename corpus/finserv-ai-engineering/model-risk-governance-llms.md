@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Model risk governance for LLMs
 domain: finserv-ai-engineering
 tags: [governance, model-risk, sr11-7]

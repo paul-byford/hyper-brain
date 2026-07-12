@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Retrieval-augmented generation for trade surveillance
 domain: finserv-ai-engineering
 tags: [rag, surveillance, compliance]

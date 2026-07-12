@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Guardrails and prompt-injection defence for banking copilots
 domain: finserv-ai-engineering
 tags:

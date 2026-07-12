@@ -223,6 +223,7 @@ class BrainService:
                         "doc_id": doc.doc_id,
                         "domain": doc.domain,
                         "title": doc.title,
+                        "type": doc.type,
                         "links": list(doc.links),
                         "tags": list(doc.tags),
                         "source": doc.source,
@@ -231,6 +232,35 @@ class BrainService:
                     }
                 )
         return out
+
+    def export_bundle(self, identity: Identity, *, domain: str | None = None) -> bytes:
+        """Export the caller's visible corpus (optionally one domain) as an Open
+        Knowledge Format bundle: a zip of ``<domain>/<slug>.md`` concepts with OKF-native
+        frontmatter, ready to ``git clone``-style share or hand to any OKF consumer."""
+        from ..okf import bundle_zip
+
+        visible = self._visible_domains(identity)
+        if domain is not None:
+            if domain not in visible:
+                raise AccessError("you cannot export a domain you may not see")
+            visible = {domain}
+        docs: list[tuple[dict, str]] = []
+        for doc in self.index.documents.values():
+            if doc.domain not in visible:
+                continue
+            view = {
+                "doc_id": doc.doc_id,
+                "domain": doc.domain,
+                "title": doc.title,
+                "type": doc.type,
+                "tags": list(doc.tags),
+                "source_url": doc.source_url,
+                "fetched_at": doc.fetched_at,
+            }
+            docs.append((view, self._reconstruct(doc.doc_id, doc.title)))
+        if not docs:
+            raise DocumentNotFound(domain or "corpus")
+        return bundle_zip(docs)
 
     def list_domains(self, identity: Identity) -> list[str]:
         domains = self._visible_domains(identity)
@@ -356,6 +386,7 @@ class BrainService:
             "doc_id": document.doc_id,
             "domain": document.domain,
             "title": document.title,
+            "type": document.type,  # OKF concept type
             "tags": list(document.tags),
             "links": list(document.links),
             "source": document.source,
@@ -384,6 +415,7 @@ class BrainService:
         title: str,
         content: str,
         source_url: str | None = None,
+        doc_type: str = "Note",
     ) -> ProposalResult:
         with span(
             "brain.propose_document",
@@ -406,6 +438,7 @@ class BrainService:
                 content=content,
                 author=identity.email or identity.subject,
                 source_url=source_url,
+                doc_type=doc_type,
             )
             return self.gate.submit(proposal)
 
@@ -418,6 +451,7 @@ class BrainService:
         content: str,
         source_url: str | None = None,
         tags: list[str] | None = None,
+        doc_type: str = "Note",
     ) -> ProposalResult:
         """Write a document LIVE into a domain the caller may write. A write grant is
         trust, so this is direct with no review, exactly like a personal note; the
@@ -425,7 +459,12 @@ class BrainService:
         targets delegate to :meth:`add_note`."""
         if is_personal_domain(domain):
             return self.add_note(
-                identity, title=title, content=content, source_url=source_url, tags=tags
+                identity,
+                title=title,
+                content=content,
+                source_url=source_url,
+                tags=tags,
+                doc_type=doc_type,
             )
         with span(
             "brain.add_document",
@@ -445,6 +484,7 @@ class BrainService:
                 author=identity.email or identity.subject,
                 source_url=source_url,
                 tags=tags,
+                doc_type=doc_type,
             )
             self._rate_limit(identity)
             result = self.note_gate.submit(proposal)  # note_gate = live corpus write
@@ -527,6 +567,7 @@ class BrainService:
                 content=content,
                 author=identity.email or identity.subject,
                 tags=new_tags,
+                doc_type=current.get("type") or "Note",  # preserve the OKF concept type
             )
             result = self.note_gate.submit(proposal)
             if new_slug != old_slug:
@@ -603,6 +644,7 @@ class BrainService:
         content: str,
         source_url: str | None = None,
         tags: list[str] | None = None,
+        doc_type: str = "Note",
     ) -> ProposalResult:
         """Write a note into the caller's own personal domain. Ungated: the caller
         owns this space, so there is nothing to review. The note is searchable once
@@ -623,6 +665,7 @@ class BrainService:
                 author=identity.email or identity.subject,
                 source_url=source_url,
                 tags=tags,
+                doc_type=doc_type,
             )
             self._rate_limit(identity)
             result = self.note_gate.submit(proposal)
@@ -994,6 +1037,14 @@ class BrainService:
                     quota_degraded = is_quota_error(exc)
 
             title = (default_title or self._first_heading(body) or "Untitled draft").strip()[:120]
+            # Suggest an Open Knowledge Format concept type from the source kind.
+            okf_type = {
+                "url": "Web article",
+                "git": "Reference",
+                "transcript": "Transcript",
+                "file": "Document",
+                "text": "Note",
+            }.get(kind, "Note")
             return {
                 "title": title,
                 "content": body,
@@ -1001,6 +1052,7 @@ class BrainService:
                 "curated": curated,
                 "quota_degraded": quota_degraded,
                 "tags": tags,
+                "type": okf_type,
             }
 
     @staticmethod

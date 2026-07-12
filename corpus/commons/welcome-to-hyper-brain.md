@@ -1,4 +1,5 @@
 ---
+type: Guide
 title: Welcome to Hyper Brain
 domain: commons
 tags:

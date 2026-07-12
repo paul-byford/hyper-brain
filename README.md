@@ -61,6 +61,18 @@ moderation), and **team** domains whose content lands through review. Share a si
 note or a whole space with a colleague when you are ready. Clear boundaries are what
 make shared curation safe at scale.
 
+### Stored in an open format (OKF)
+
+Everything Hyper Brain knows is written in Google's
+[**Open Knowledge Format**](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf):
+plain markdown + YAML frontmatter under git, where each note is a portable **concept**
+with a `type`. Your corpus is a `git clone`-able OKF bundle, so your curated context is
+never locked in: export any space as a bundle for another OKF tool or Google's Knowledge
+Catalog, and import an OKF bundle from elsewhere through the same pipeline. OKF is the
+open standardisation of the Karpathy LLM-wiki pattern this project descends from (see
+[`docs/LINEAGE.md`](docs/LINEAGE.md)); Hyper Brain adds the governed serving, isolation,
+and review that OKF deliberately leaves open.
+
 ## How it works, in one picture
 
 ```

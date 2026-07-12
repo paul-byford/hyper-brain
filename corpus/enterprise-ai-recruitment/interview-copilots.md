@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Structured interview copilots
 domain: enterprise-ai-recruitment
 tags: [interviews, copilot, structured]

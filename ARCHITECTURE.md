@@ -467,6 +467,33 @@ with the repository. (We deliberately defer gbrain's autonomous "dream cycle"
 enrichment for this reason: it fights near-zero idle cost and it makes the brain
 mutate outside review. It is noted as an optional future Cloud Run Job.)
 
+### The corpus is an Open Knowledge Format bundle
+
+That "markdown + frontmatter + `[[wikilinks]]` under git" shape is not ad-hoc: it is
+Google's **Open Knowledge Format** (OKF), the open, vendor-neutral standard for
+portable, agent-readable knowledge (`docs/LINEAGE.md` section 4). The mapping is
+near-exact, so we adopt OKF as the corpus format rather than inventing our own:
+
+- A **bundle** is a directory tree of markdown concepts; each `corpus/<domain>/` is a
+  bundle, and the whole corpus is one. A reserved `index.md` lists a directory.
+- A **concept** is one markdown file with YAML frontmatter. OKF requires exactly one
+  field, `type`, which `_stamp` writes (`Note`, `Reference`, `Web article`,
+  `Transcript`, ...); `title`, `tags`, and our provenance (`source`, `source_url`,
+  `fetched_at`, `checksum`, `ingest_run`) ride along as OKF producer extensions.
+- The **concept id** is the path minus `.md`, which is exactly our `domain/slug`
+  `doc_id`. Links are a directed graph, authored as `[[wikilinks]]`.
+
+Two consequences follow. First, **interop is built in**: any space exports as a clean
+OKF bundle (`brain_app.okf.bundle_zip` renders OKF-native `resource` / `timestamp`
+fields and rewrites `[[wikilinks]]` to standard markdown links), consumable by another
+OKF tool or Google's Knowledge Catalog; and an externally-authored OKF bundle imports
+through the same web / git / file adapters, since it is just markdown in a tree.
+Second, **conformance is enforced**: `brain_app.okf.validate_bundle` checks every
+non-reserved concept has parseable frontmatter with a non-empty `type`, and the seed
+corpus is validated in CI. OKF governs the format at rest; the domain ACL (section 7),
+hybrid retrieval (section 6) and the review gate (section 12) govern how it is served
+and grown.
+
 ---
 
 ## 12. Ingestion: adapters and the corpus lifecycle

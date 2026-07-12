@@ -180,6 +180,7 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
             title=str(data.get("title", "")),
             content=str(data.get("content", "")),
             source_url=data.get("source_url"),
+            doc_type=str(data.get("type") or "Note"),
         )
         return JSONResponse({"status": result.status, "path": result.path, "detail": result.detail})
 
@@ -195,8 +196,21 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
             content=str(data.get("content", "")),
             source_url=data.get("source_url"),
             tags=[str(t) for t in tags] if isinstance(tags, list) else None,
+            doc_type=str(data.get("type") or "Note"),
         )
         return JSONResponse({"status": result.status, "detail": result.detail})
+
+    async def export_bundle(request, identity):
+        from starlette.responses import Response
+
+        domain = request.query_params.get("domain") or None
+        data = service.export_bundle(identity, domain=domain)
+        name = f"{domain or 'hyper-brain'}-okf-bundle.zip"
+        return Response(
+            data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
 
     async def upload(request, identity):
         data = await request.json()
@@ -305,6 +319,7 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/reports", ["GET"], reports)
     route("/api/report/resolve", ["POST"], resolve_report)
     route("/api/upload", ["POST"], upload)
+    route("/api/export", ["GET"], export_bundle)
     route("/api/share", ["POST"], share)
     route("/api/unshare", ["POST"], unshare)
     route("/api/shares", ["GET"], shares)

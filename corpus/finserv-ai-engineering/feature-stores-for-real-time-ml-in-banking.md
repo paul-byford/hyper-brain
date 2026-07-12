@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Feature stores for real-time ML in banking
 domain: finserv-ai-engineering
 tags:

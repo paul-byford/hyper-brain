@@ -438,6 +438,14 @@
   /* access + architecture */
   .accessnote { border: 1px solid var(--hair); background: var(--panel-2); padding: 14px 15px; font-size: 13px; color: var(--muted); line-height: 1.55; }
   .accessnote b { color: var(--ink); font-weight: 600; }
+  /* Open Knowledge Format: the concept type chip / id on a document, and the callout. */
+  .doctitlerow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .okftype { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--signal-ink); background: color-mix(in srgb, var(--signal) 10%, transparent); border: 1px solid color-mix(in srgb, var(--signal) 35%, var(--hair)); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .provenance .okfid { color: var(--faint); }
+  .okfnote { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border: 1px solid color-mix(in srgb, var(--signal) 30%, var(--hair)); background: color-mix(in srgb, var(--signal) 5%, var(--panel)); border-radius: 12px; padding: 13px 16px; margin: 2px 0; }
+  .okfnote-body { flex: 1 1 320px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+  .okfnote-body b { color: var(--ink); font-weight: 600; }
+  .okfnote .ghostbtn { white-space: nowrap; }
   .archgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   @media (max-width: 760px) { .archgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 480px) { .archgrid { grid-template-columns: 1fr; } }
@@ -595,6 +603,7 @@
 textarea.selectbox { resize: vertical; font-family: var(--sans); }
 .check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+.sharestatus { font-size: 12px; color: var(--muted); min-height: 15px; margin-top: 8px; line-height: 1.4; }
 
 /* ---- Public landing page (live mode, signed out) ---- */
 .landing { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px; background:

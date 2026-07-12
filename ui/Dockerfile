@@ -13,4 +13,5 @@ RUN useradd --create-home --uid 1000 ui
 USER ui
 
 EXPOSE 8080
-CMD ["sh", "-c", "python -m http.server ${PORT} --directory /ui"]
+# serve.py adds Cache-Control so redeployed ES modules never skew against stale ones.
+CMD ["python", "serve.py"]

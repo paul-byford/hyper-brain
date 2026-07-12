@@ -1,4 +1,5 @@
 ---
+type: Glossary
 title: Glossary
 domain: commons
 tags:

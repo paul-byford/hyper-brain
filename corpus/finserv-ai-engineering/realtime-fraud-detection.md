@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Real-time fraud detection with streaming features
 domain: finserv-ai-engineering
 tags: [fraud, streaming, latency]

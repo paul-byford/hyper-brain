@@ -1,4 +1,5 @@
 ---
+type: Reference
 title: Bias audits and hiring compliance
 domain: enterprise-ai-recruitment
 tags: [bias, compliance, regulation]

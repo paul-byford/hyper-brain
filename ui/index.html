@@ -217,6 +217,11 @@
       </div>
       <div class="cardgrid" id="sourcecards"></div>
 
+      <div class="okfnote">
+        <div class="okfnote-body"><b>Stored as Open Knowledge Format.</b> Whatever comes in is written in Google's <a class="wikilink" href="https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf" target="_blank" rel="noreferrer">Open Knowledge Format</a>: plain markdown + YAML frontmatter under git, a portable, vendor-neutral bundle you can <span class="mono">git clone</span>, hand to any agent, or feed to Google's Knowledge Catalog. Each note is an OKF <b>concept</b> with a <b>type</b>; your context is never locked in.</div>
+        <button class="ghostbtn" id="okfexport" hidden>⇩ Export your OKF bundle</button>
+      </div>
+
       <section class="panel pipelinepanel">
         <header><h2>The onboarding pipeline</h2><button class="runbtn" id="runpipe">▶ Onboard a document</button></header>
         <div class="body">
@@ -552,11 +557,13 @@
         <p class="modal-lead" id="sharelead">Choose who may read this. They see it alongside their own domains; revoke any time.</p>
         <label class="fieldlabel" for="sharewith">Share with</label>
         <select id="sharewith" class="selectbox"></select>
+        <input id="sharewithemail" class="selectbox" type="email" placeholder="colleague@company.com" autocomplete="off" hidden />
         <label class="check"><input type="checkbox" id="sharewrite" /> Also let them add to it (write)</label>
         <div class="modal-actions">
           <button class="gobtn" id="sharedo">Share</button>
           <button class="ghostbtn" data-close-share>Cancel</button>
         </div>
+        <div id="sharestatus" class="sharestatus"></div>
         <div id="sharelistwrap"></div>
       </div>
     </div>

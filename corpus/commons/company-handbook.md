@@ -1,4 +1,5 @@
 ---
+type: Guide
 title: Company handbook
 domain: commons
 tags:
