@@ -23,6 +23,7 @@ from .service import (
     BrainService,
     DocumentNotFound,
     DomainNotAuthorized,
+    GuestReadOnly,
     RateLimitError,
     WriteScopeError,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "BrainService",
     "DocumentNotFound",
     "DomainNotAuthorized",
+    "GuestReadOnly",
     "GcsCorpusGate",
     "GcsProposalGate",
     "GitBranchGate",

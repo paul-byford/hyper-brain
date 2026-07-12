@@ -206,6 +206,26 @@ class TokenIssuer:
             }
         )
 
+    def mint_guest_token(self) -> dict:
+        """A short-lived, read-only guest access token: no Google login and no email,
+        with a ``guest`` marker the brain maps to a read-only identity. This is what lets
+        a public showcase link be tried without sign-in; every write is refused in-app."""
+        now = _now()
+        ttl = min(self.access_ttl, 7200)  # cap guest sessions at ~2h
+        token = self.key.sign(
+            {
+                "typ": "access",
+                "iss": self.issuer,
+                "aud": self.resource,
+                "iat": now,
+                "exp": now + ttl,
+                "sub": f"guest:{secrets.token_hex(6)}",
+                "scope": "read",
+                "guest": True,
+            }
+        )
+        return {"access_token": token, "token_type": "Bearer", "expires_in": ttl, "scope": "read"}
+
     def mint_refresh_token(self, *, sub: str, email: str, client_id: str, scope: str) -> str:
         now = _now()
         return self.key.sign(

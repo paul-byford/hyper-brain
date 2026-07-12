@@ -22,6 +22,12 @@ class Identity:
     scopes: frozenset[str]
     claims: dict = field(default_factory=dict)
 
+    @property
+    def is_guest(self) -> bool:
+        """A read-only guest (a token the AS minted without Google login). Guests read
+        the commons but every write is refused server-side, whatever the policy says."""
+        return bool(self.claims.get("guest"))
+
 
 def _principals_from_claims(claims: dict) -> list[str]:
     """The principals a policy grant can match: the email and group memberships.

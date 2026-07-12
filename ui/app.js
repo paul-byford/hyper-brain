@@ -16,7 +16,7 @@ import {
   rankChunks,
   reconstructDoc,
 } from "./lib.js";
-import { beginLogin, completeLoginIfRedirected, signOut, token } from "./auth.js";
+import { beginLogin, completeLoginIfRedirected, guestLogin, signOut, token } from "./auth.js";
 import { api, fileToBase64 } from "./live.js";
 
 // Live mode is on when the deployed config carries the brain REST base + OAuth issuer.
@@ -143,6 +143,12 @@ function showLanding() {
   $("#landing").hidden = false;
   $("#approot").hidden = true;
   $("#signin").addEventListener("click", () => beginLogin(config.auth_url));
+  const g = $("#guestin");
+  if (g) g.addEventListener("click", async () => {
+    g.disabled = true; g.textContent = "Entering…";
+    try { await guestLogin(config.auth_url); await loadLive(); }
+    catch (e) { g.disabled = false; g.textContent = "Continue as guest"; $("#landinghint").textContent = String(e.message || e); }
+  });
 }
 
 // Local / offline demo: the static exported index with the "Acting as" simulator.
@@ -205,11 +211,19 @@ async function bootLive(me, docs) {
 
   // Live chrome: show who is signed in, hide the "Acting as" simulator, offer review.
   $("#userchip").hidden = false;
-  $("#username").textContent = friendly(state.principal);
-  $("#signout").addEventListener("click", () => { broadcast("signout"); signOut(); window.location.reload(); });
+  if (ME.is_guest) {
+    // Read-only guest: label it, and turn "Sign out" into "Sign in with Google".
+    document.body.classList.add("guest");
+    $("#username").textContent = "Guest · read-only";
+    const so = $("#signout"); so.textContent = "Sign in"; so.title = "Sign in with Google to save your work";
+    so.addEventListener("click", () => beginLogin(config.auth_url));
+  } else {
+    $("#username").textContent = friendly(state.principal);
+    $("#signout").addEventListener("click", () => { broadcast("signout"); signOut(); window.location.reload(); });
+  }
   const idpill = document.querySelector("#page-explore .idpill");
   if (idpill) idpill.style.display = "none";
-  const canReview = (ME.writable || []).length > 0;
+  const canReview = !ME.is_guest && (ME.writable || []).length > 0;
   $("#reviewtab").hidden = !canReview;
   $("#agentlive").hidden = false; // signed in: the Agents page can run the real team
 
@@ -357,6 +371,7 @@ function renderDocArticle(doc) {
   const rb = $("#docreport"); if (rb) rb.addEventListener("click", () => reportOpenDoc(doc));
 }
 async function reportOpenDoc(doc) {
+  if (isGuest()) return guestPrompt("report content");
   const reason = window.prompt(`Flag “${doc.title}” for a moderator. Briefly, what is the problem?`, "");
   if (reason === null) return; // cancelled
   const btn = $("#docreport"); if (btn) { btn.disabled = true; btn.textContent = "Reporting…"; }
@@ -512,6 +527,7 @@ async function loadLinkSuggestions() {
 }
 async function doLink(source, target, row) {
   const status = $("#linkstatus");
+  if (isGuest()) { if (status) status.innerHTML = '<p class="addnote" style="margin:6px 0">Guests are read-only. Sign in with Google to link notes.</p>'; return; }
   try {
     const r = await API.link(source, target);
     const msg = r.status === "exists"
@@ -690,6 +706,7 @@ function wireLive() {
   $("#notedo").addEventListener("click", async () => {
     const title = $("#notetitle").value.trim(), content = $("#notebody").value.trim();
     if (!title && !content) return;
+    if (isGuest()) { $("#notemodal").hidden = true; guestPrompt("save a note"); return; }
     const noteTitle = title || "Untitled note";
     $("#notemodal").hidden = true; $("#notetitle").value = ""; $("#notebody").value = "";
     // Optimistic: show the note at once with a "saving" badge, so a slow save still
@@ -720,7 +737,7 @@ function wireLive() {
   $("#agentrun").addEventListener("click", runLiveAgent);
   $("#agentquery").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runLiveAgent(); } });
 
-  $("#uploadbtn").addEventListener("click", () => $("#fileinput").click());
+  $("#uploadbtn").addEventListener("click", () => { if (isGuest()) return guestPrompt("upload a file"); $("#fileinput").click(); });
   $("#fileinput").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     // Show the item immediately with an "uploading" badge (like a note), then flip to
@@ -1016,6 +1033,13 @@ function renderLegend() {
 const PERSONAL = {};        // principal -> [{ id, title, body }]  (demo simulator)
 let SHARES = [];            // demo: { by, to, scope: "space"|"doc", docId, docTitle, write }
 let shareCtx = null;        // the pending share target while the modal is open
+// Read-only guest: keep every feature visible, but intercept the final write step with
+// a clear "sign in to save" prompt (the server refuses guest writes regardless).
+function isGuest() { return !!(ME && ME.is_guest); }
+function guestPrompt(action) {
+  flashUpload(`Guests are read-only. Sign in with Google to ${action}. You can keep exploring meanwhile.`);
+  return true;
+}
 // Live: the real shares the caller has granted / received, from /api/shares.
 let LIVE_SHARES = { granted: [], received: [] };
 async function loadLiveShares() {
@@ -1162,6 +1186,7 @@ async function doShare() {
   if (LIVE) {
     const to = $("#sharewithemail").value.trim();
     const status = $("#sharestatus");
+    if (isGuest()) { if (status) status.textContent = "Guests are read-only. Sign in with Google to share."; return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { if (status) status.textContent = "Enter a valid email address."; return; }
     const write = $("#sharewrite").checked, pd = ME && ME.personal && ME.personal.domain;
     const payload = shareCtx.scope === "space"
@@ -2260,6 +2285,7 @@ function insertWikilink(title, btn) {
 }
 async function createDraft() {
   if (!LIVE || !studioDraft) return;
+  if (isGuest()) { studioMsg("You're a guest (read-only). Sign in with Google to save this note — you can keep drafting and editing it as a guest."); return; }
   const title = $("#drafttitle").value.trim() || "Untitled";
   const content = $("#draftcontent").value;
   const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
@@ -2420,6 +2446,7 @@ function refreshSplitPreview(i) {
 function refreshSplitPreviews() { splitItems.forEach((_, i) => refreshSplitPreview(i)); }
 async function createSplitAll() {
   if (!LIVE || !splitItems) return;
+  if (isGuest()) { studioMsg("You're a guest (read-only). Sign in with Google to create these notes."); return; }
   const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
   const src = studioDraft ? studioDraft.source_url || undefined : undefined;
   const tags = draftTags();

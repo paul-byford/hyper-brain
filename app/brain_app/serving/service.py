@@ -96,6 +96,11 @@ class DomainNotAuthorized(AccessError):
     """The caller tried to write into a domain they are not granted."""
 
 
+class GuestReadOnly(AccessError):
+    """A read-only guest tried a write action. Guests can browse, search, answer and
+    draft in Studio, but every persistence step is refused until they sign in."""
+
+
 class DocumentNotFound(Exception):
     """No such document *in the caller's visible domains*.
 
@@ -308,6 +313,7 @@ class BrainService:
         shared_docs = sorted(self._extra_doc_ids(identity))
         return {
             "you": {"subject": identity.subject, "email": identity.email},
+            "is_guest": identity.is_guest,
             "personal": {
                 "domain": personal,
                 "documents": doc_counts.get(personal, 0) if personal else 0,
@@ -417,6 +423,7 @@ class BrainService:
         source_url: str | None = None,
         doc_type: str = "Note",
     ) -> ProposalResult:
+        self._require_not_guest(identity)
         with span(
             "brain.propose_document",
             **{"brain.domain": domain, "brain.principal": identity.subject},
@@ -457,6 +464,7 @@ class BrainService:
         trust, so this is direct with no review, exactly like a personal note; the
         agent's ``propose_document`` path still stages to the review queue. Personal
         targets delegate to :meth:`add_note`."""
+        self._require_not_guest(identity)
         if is_personal_domain(domain):
             return self.add_note(
                 identity,
@@ -492,6 +500,13 @@ class BrainService:
             return result
 
     # ---- Content lifecycle: edit / delete, and the moderation boundary -----------
+    def _require_not_guest(self, identity: Identity) -> None:
+        """The write boundary for guests. Called before any persistence, so a guest is
+        refused regardless of the policy (the commons wildcard grants write to everyone,
+        which a guest must not inherit)."""
+        if identity.is_guest:
+            raise GuestReadOnly("guests are read-only; sign in with Google to save changes")
+
     def _rate_limit(self, identity: Identity) -> None:
         """Cap writes per identity per minute (anti-spam) before a live write lands."""
         now = time.monotonic()
@@ -546,6 +561,7 @@ class BrainService:
         """Overwrite an existing document (body, and optionally title/tags). Allowed for
         the owner (personal) or a moderator (explicit write grant). Renaming writes the
         new slug and removes the old file so there is no orphan."""
+        self._require_not_guest(identity)
         current = self.get_document(identity, doc_id)  # read-enforce + fetch metadata
         domain = current["domain"]
         if not self._can_moderate(identity, domain):
@@ -577,6 +593,7 @@ class BrainService:
 
     def delete_document(self, identity: Identity, doc_id: str) -> dict:
         """Delete a document. Allowed for the owner (personal) or a moderator."""
+        self._require_not_guest(identity)
         current = self.get_document(identity, doc_id)
         domain = current["domain"]
         if not self._can_moderate(identity, domain):
@@ -593,6 +610,7 @@ class BrainService:
     def report_document(self, identity: Identity, doc_id: str, *, reason: str) -> dict:
         """Flag a document for moderator review. Any reader who can see it may report
         it; the flag is stored out of band and never touches the live document."""
+        self._require_not_guest(identity)
         current = self.get_document(identity, doc_id)  # read-enforce
         self.reports_store.add(
             Report(
@@ -626,6 +644,7 @@ class BrainService:
     def resolve_report(self, identity: Identity, doc_id: str, *, remove: bool = False) -> dict:
         """Clear the flags on a document (dismiss), optionally removing the content.
         Restricted to a moderator of the document's domain."""
+        self._require_not_guest(identity)
         current = self.get_document(identity, doc_id)  # read-enforce + domain
         if not self._can_moderate(identity, current["domain"]):
             raise AccessError("you may only resolve reports in a domain you moderate")
@@ -652,6 +671,7 @@ class BrainService:
 
         The slug is derived from the title, so re-submitting a note with the same
         title overwrites it: that is how :meth:`link_notes` edits a note in place."""
+        self._require_not_guest(identity)
         personal = personal_domain(identity)
         if personal is None:
             raise AccessError("an anonymous caller has no personal domain to write to")
@@ -767,6 +787,7 @@ class BrainService:
 
         Both notes must be in the caller's own personal space; anything else is
         refused, matching the intra-domain rule the link graph already enforces."""
+        self._require_not_guest(identity)
         personal = personal_domain(identity)
         if personal is None:
             raise AccessError("an anonymous caller has no personal space to link within")
@@ -818,6 +839,7 @@ class BrainService:
         domain goes through the reviewed propose path. Retrieval is text-only, so the
         extracted text is what becomes searchable, with the original kept downloadable.
         """
+        self._require_not_guest(identity)
         try:
             raw = base64.b64decode(content_base64, validate=True)
         except (binascii.Error, ValueError) as exc:
@@ -1114,6 +1136,7 @@ class BrainService:
     ) -> dict:
         """Grant ``principal`` read (or write) access to a domain or a single document
         the caller owns. Recorded in the caller's own overlay file."""
+        self._require_not_guest(identity)
         with span("brain.share", **{"brain.principal": identity.subject}):
             resolved = self._resolve_share_target(identity, domain, doc_id)
             share = validate_share(
@@ -1142,6 +1165,7 @@ class BrainService:
         doc_id: str | None = None,
     ) -> int:
         """Revoke a share the caller previously created. Returns how many were removed."""
+        self._require_not_guest(identity)
         with span("brain.unshare", **{"brain.principal": identity.subject}):
             owned = self.shares_store.for_owner(identity.subject)
 
@@ -1186,6 +1210,7 @@ class BrainService:
         """Promote a staged proposal to live and reindex. The caller must have write
         access to the proposal's domain; otherwise it is refused (and, for a domain
         they cannot even see, indistinguishable from a missing proposal)."""
+        self._require_not_guest(identity)
         domain = proposal_domain(name)
         writable = self._writable(identity)
         with span(

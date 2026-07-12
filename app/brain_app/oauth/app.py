@@ -44,6 +44,13 @@ def build_app(issuer: TokenIssuer, google: GoogleOidc) -> Starlette:
     async def jwks(request):
         return JSONResponse(issuer.key.jwks())
 
+    async def guest(request):
+        # A read-only guest token, minted with no Google login. The brain maps it to a
+        # guest identity that reads the commons but cannot write. For frictionless demos.
+        resp = JSONResponse(issuer.mint_guest_token())
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     async def register(request):
         try:
             body = await request.json()
@@ -152,6 +159,7 @@ def build_app(issuer: TokenIssuer, google: GoogleOidc) -> Starlette:
     routes = [
         Route("/.well-known/oauth-authorization-server", metadata, methods=["GET"]),
         Route("/jwks", jwks, methods=["GET"]),
+        Route("/guest", guest, methods=["GET"]),
         Route("/register", register, methods=["POST"]),
         Route("/authorize", authorize, methods=["GET"]),
         Route("/oauth2/callback", callback, methods=["GET"]),

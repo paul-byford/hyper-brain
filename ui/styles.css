@@ -625,8 +625,14 @@ textarea.selectbox { resize: vertical; font-family: var(--sans); }
   font-size: 12px; color: var(--signal-ink); border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hair)); }
 .landing-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .gobtn.big { font-size: 15px; padding: 12px 22px; }
+.ghostbtn.big { font-size: 14px; padding: 11px 20px; }
 .landing-hint { color: var(--clay, #b46); font-size: 12.5px; }
+.landing-guestnote { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 14px 0 0; padding: 11px 14px; border-left: 2px solid color-mix(in srgb, var(--signal) 45%, var(--hair)); background: color-mix(in srgb, var(--signal) 6%, transparent); border-radius: 0 8px 8px 0; }
+.landing-guestnote b { color: var(--ink); }
 .landing-foot { color: var(--faint); font-size: 10.5px; letter-spacing: .04em; margin: 22px 0 0; }
+/* A read-only guest: tint the user chip so the state is unmistakable. */
+body.guest .userchip { border-color: color-mix(in srgb, var(--signal) 45%, var(--hair)); }
+body.guest #username { color: var(--signal-ink); }
 
 /* ---- Live chrome: signed-in user, review queue ---- */
 .userchip { display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: var(--panel);

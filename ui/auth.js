@@ -53,6 +53,17 @@ export function signOut() {
   sessionStorage.removeItem(TOKEN_KEY);
 }
 
+// Guest access: fetch a read-only token the AS mints with no Google login, and store it
+// exactly like a real one. The brain maps it to a guest identity that can browse but
+// never write, so the whole app opens with a single click for a frictionless demo.
+export async function guestLogin(authUrl) {
+  const resp = await fetch(`${authUrl}/guest`);
+  if (!resp.ok) throw new Error(`guest access failed (${resp.status})`);
+  const access = (await resp.json()).access_token;
+  sessionStorage.setItem(TOKEN_KEY, access);
+  return access;
+}
+
 // Kick off the redirect to the AS. Returns a promise that never resolves (navigates).
 export async function beginLogin(authUrl) {
   const verifier = randomString();
