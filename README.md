@@ -11,7 +11,9 @@ through one source of truth, and back *out* to every surface that needs it. The 
 repository serves an effortless personal demo and a cost- and security-controlled
 team deployment, with only configuration changing between them.
 
-![Hyper Brain UI, the Connections page: an animated Sources to Hyper Brain to Surfaces flow, with source categories and the onboarding pipeline](docs/connections.png)
+<video src="https://raw.githubusercontent.com/paul-byford/hyper-brain/main/video/out/hyper-brain-promo.mp4" poster="https://raw.githubusercontent.com/paul-byford/hyper-brain/main/docs/media/promo-poster.png" controls muted playsinline width="100%"></video>
+
+<sub>▶ A product film, under a minute. If the player does not load, [watch it here](video/out/hyper-brain-promo.mp4) — it is built with Remotion; source in [`video/`](video/).</sub>
 
 - **Design rationale:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - **Intellectual lineage** (Karpathy's LLM wiki, Garry Tan's gbrain, and what we
@@ -19,6 +21,34 @@ team deployment, with only configuration changing between them.
 - **Build plan and status:** [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
 - **Tracing walkthrough:** [`docs/observability.md`](docs/observability.md)
 - **Remote connectors (OAuth):** [`docs/oauth.md`](docs/oauth.md): add the brain to Claude/ChatGPT by URL
+
+## A look around
+
+**One governed brain.** Knowledge flows *in* from connectors, through a single governed
+centre, and back *out* to every surface over the open MCP protocol. One place to secure,
+audit and improve.
+
+![Hyper Brain Overview: an animated Sources to the brain to Surfaces flow, with the ingest, curate, index, serve pipeline at the centre](docs/media/explore.png)
+
+**Studio drafts the structure, you finalise.** Paste a link or some text and the
+in-tenancy Gemini curator returns a clean, well-structured article: a title, sections and
+tags, with auto-detected `[[wikilinks]]` woven into the prose *and* a ranked panel of
+suggested links to your existing notes. You review and edit; nothing is saved until you
+create it.
+
+![Content Studio: an AI-curated draft "Onboarding New Teammates to the Company Brain" with headings and bullets, [[wikilinks]] highlighted in the body, generated tags, and a Suggested links panel scoring related commons notes](docs/media/studio-draft.png)
+
+**A real agent team answers you.** A coordinator delegates to specialist sub-agents over
+Google ADK agent transfer; each reaches the governed brain over authenticated MCP, scoped
+to exactly what you may see. Replay the simulated flow, or run the live team.
+
+![The multi-agent brain: You to Coordinator to Researcher and Curator, reaching Brain over MCP, the corpus and index, Gemini on Vertex, and a human review queue](docs/media/agents.png)
+
+**All in your own tenancy.** Every box is a resource in one Google Cloud project:
+scale-to-zero Cloud Run, private Cloud Storage buckets, Vertex AI. Your corpus, embeddings
+and answer synthesis never leave the boundary.
+
+![Reference architecture: Hyper Brain on Google Cloud, showing the in-region, in-tenancy data boundary around Cloud Run services and jobs, Cloud Storage, Vertex AI and Secret Manager](docs/media/connections.png)
 
 ## What it does
 
