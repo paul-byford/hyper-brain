@@ -62,7 +62,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function setBootMessage(m) { const el = $("#bootmsg"); if (el) el.textContent = m; }
 function showBoot(m) { const b = $("#booting"); if (!b) return; b.classList.remove("error"); b.hidden = false; setBootMessage(m || "Loading…"); }
 function hideBoot() { const b = $("#booting"); if (b) b.hidden = true; }
-function revealApp() { const el = $("#approot"); if (el) el.hidden = false; }
+function revealApp() {
+  // Hide the landing overlay too: the guest path reveals the app from the same page
+  // (no redirect), so a lingering landing would sit on top while the app + tour start.
+  const l = $("#landing"); if (l) l.hidden = true;
+  const el = $("#approot"); if (el) el.hidden = false;
+}
 function bootError(msg, onRetry, label) {
   const b = $("#booting"); if (!b) return;
   b.hidden = false; b.classList.add("error");
@@ -2283,9 +2288,22 @@ function insertWikilink(title, btn) {
   }
   if (btn) { btn.disabled = true; btn.classList.add("added"); const a = btn.querySelector(".dl-add"); if (a) a.textContent = "✓"; }
 }
+// A clear, friendly notice shown in the draft area (visible when the source panel is
+// collapsed) when a guest tries to save. Offers the sign-in path; loses no work.
+function studioGuestNotice() {
+  const el = $("#draftresult");
+  el.innerHTML = `<div class="guestnotice">
+    <div class="guestnotice-t">Guest mode is read-only</div>
+    <div class="guestnotice-b">Your draft looks great, but saving it needs an account. Sign in with Google to keep it. Your draft stays right here, so nothing is lost.</div>
+    <button class="gobtn tiny" id="draftsignin">Sign in with Google to save</button>
+  </div>`;
+  const b = $("#draftsignin");
+  if (b) b.addEventListener("click", () => beginLogin(config.auth_url));
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 async function createDraft() {
   if (!LIVE || !studioDraft) return;
-  if (isGuest()) { studioMsg("You're a guest (read-only). Sign in with Google to save this note — you can keep drafting and editing it as a guest."); return; }
+  if (isGuest()) return studioGuestNotice();
   const title = $("#drafttitle").value.trim() || "Untitled";
   const content = $("#draftcontent").value;
   const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
@@ -2446,7 +2464,7 @@ function refreshSplitPreview(i) {
 function refreshSplitPreviews() { splitItems.forEach((_, i) => refreshSplitPreview(i)); }
 async function createSplitAll() {
   if (!LIVE || !splitItems) return;
-  if (isGuest()) { studioMsg("You're a guest (read-only). Sign in with Google to create these notes."); return; }
+  if (isGuest()) return studioGuestNotice();
   const target = $("#drafttarget").value, pd = ME.personal && ME.personal.domain;
   const src = studioDraft ? studioDraft.source_url || undefined : undefined;
   const tags = draftTags();
@@ -2503,6 +2521,19 @@ function updateTabFades() {
   const t = $("#pagetabs"); if (!t) return;
   t.classList.toggle("can-left", t.scrollLeft > 2);
   t.classList.toggle("can-right", t.scrollLeft + t.clientWidth < t.scrollWidth - 2);
+}
+// Show the full "Guided tour" label when the top-bar right cluster has room; collapse to
+// "◇ Tour" when it doesn't (so it adapts to username length, doc count, etc. rather than a
+// fixed breakpoint). Two signals mean "no room": the row overflows, OR showing the full
+// label forced the (flexible, capped) username to ellipsize to make space.
+function fitTourButton() {
+  const btn = $("#starttour"), bar = document.querySelector(".bar-right");
+  if (!btn || !bar) return;
+  const uname = $("#username");
+  btn.classList.remove("compact");                 // measure with the full label
+  const overflows = bar.scrollWidth > bar.clientWidth + 1;
+  const squeezed = !!uname && uname.scrollWidth > uname.clientWidth + 1;
+  if (overflows || squeezed) btn.classList.add("compact");
 }
 function setPage(p) {
   $("#page-explore").hidden = p !== "explore";
@@ -2650,11 +2681,14 @@ function wireStatic() {
     else if (e.key === "Escape" && state.mode === "read") setMode("explore");
   });
 
-  window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); if (agentsActive) agentsResize(); updateTabFades(); });
+  window.addEventListener("resize", () => { resize(); alpha = Math.max(alpha, 0.5); if (flowActive) flowResize(); if (agentsActive) agentsResize(); updateTabFades(); fitTourButton(); });
 
   // Nav scroll strip: keep the edge-fade affordance in sync as the user scrolls it.
   const tabs = $("#pagetabs");
   if (tabs) { tabs.addEventListener("scroll", updateTabFades, { passive: true }); requestAnimationFrame(updateTabFades); }
+  // Fit the tour label to whatever space the top-bar cluster actually has.
+  requestAnimationFrame(fitTourButton);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTourButton);
 
   // Mobile: let the user expand the capped Domains / Personal panels to full height.
   for (const btn of document.querySelectorAll(".panelmore")) {
