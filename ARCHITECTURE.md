@@ -345,6 +345,16 @@ up their own agent.
   them; Memory Bank extracts durable ones after. Every read and write is scoped to the
   **verified caller's subject** (never a client parameter), so a user's memory never crosses
   to anyone else — a hermetic isolation eval enforces it, and **guests get none**.
+- **Custom specialists (Agent Studio):** the team is not fixed. A moderator composes a
+  **custom specialist** in the Studio tab — name, a description (the coordinator's routing
+  cue), a system prompt, and an allow-list of the brain's tools — previews it, then registers
+  it. At team-build time each stored spec becomes a **leaf** sub-agent and a routing line
+  appended to the coordinator, and it shows as a node on the Agents map. Crucially it is
+  **behaviour, not access**: its tools are the *same caller-bound callables* the researcher
+  uses, so a custom agent is domain-scoped to whoever runs it and can never widen the security
+  boundary; the admin authors what it *does*, never what it can *reach*. Definitions live in a
+  shared GCS registry (in-memory off-cloud), so a new specialist joins the team within the
+  cache TTL with no redeploy.
 - **Deterministic offline tier:** the same agent runs as a single researcher backed
   by a `FakeBrainModel` and in-process tools, so the golden and isolation evals
   (`tool_trajectory` + `response_match`) are hermetic and free in CI.

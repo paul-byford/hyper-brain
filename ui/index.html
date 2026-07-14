@@ -405,6 +405,39 @@
         </div>
       </section>
     </div>
+
+    <!-- Agent Studio: compose a custom specialist for the live team (admin-only). -->
+    <section class="panel agentstudio" id="agentstudio" hidden>
+      <div class="sechead">
+        <span class="eyebrow">Agent studio</span>
+        <h3>Compose a custom specialist for the team</h3>
+        <p>Name it, tell the coordinator when to use it, write its system prompt, and pick the brain tools it may call. Preview it against a question, then register it &mdash; it joins the live team on the Agents page. Its tools stay scoped to whoever runs it, so it can never reach more than that person may.</p>
+      </div>
+      <div class="asgrid">
+        <div class="asform">
+          <label class="aslbl" for="asname">Name <span class="ashint">lower_snake_case</span></label>
+          <input id="asname" type="text" placeholder="reviewer" maxlength="31" />
+          <label class="aslbl" for="asdesc">When to use it <span class="ashint">the coordinator routes on this</span></label>
+          <input id="asdesc" type="text" placeholder="checking a draft against domain policy" />
+          <label class="aslbl" for="asinstr">System prompt</label>
+          <textarea id="asinstr" rows="6" placeholder="You are the reviewer. Given a draft, check it against the team's conventions and flag anything risky before it is proposed&hellip;"></textarea>
+          <label class="aslbl">Tools it may call</label>
+          <div class="astools" id="astools"></div>
+          <div class="asactions">
+            <button class="gobtn" id="assave">Register specialist</button>
+            <button class="ghostbtn" id="aspreview">Preview</button>
+          </div>
+          <div class="asmsg" id="asmsg" hidden></div>
+        </div>
+        <div class="aspreviewpane">
+          <label class="aslbl" for="asq">Preview</label>
+          <input id="asq" type="text" placeholder="Ask it a sample question&hellip;" />
+          <div class="aspreviewout" id="asout"><span class="asmuted">Preview runs the agent against your question, with your own access.</span></div>
+          <label class="aslbl aslistlbl">Registered specialists</label>
+          <ul class="aslist" id="aslist"></ul>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div class="page" id="page-review" hidden>

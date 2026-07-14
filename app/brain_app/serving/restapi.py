@@ -305,6 +305,31 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    async def studio_agents(request, identity):
+        # The registered custom specialists + whether this caller may edit them + the tool
+        # palette (drives the Agent Studio panel and the Agents-map custom nodes).
+        return JSONResponse(service.list_custom_agents(identity))
+
+    async def studio_agent_save(request, identity):
+        data = await request.json()
+        return JSONResponse(service.save_custom_agent(identity, data))
+
+    async def studio_agent_delete(request, identity):
+        data = await request.json()
+        return JSONResponse(service.delete_custom_agent(identity, str(data["name"])))
+
+    async def studio_agent_preview(request, identity):
+        # Admin-gated (composing/previewing shared agents needs moderator access), then run the
+        # one-off agent against a sample question. Delegated to agent_run (ADK stays out of the
+        # offline service).
+        service._require_studio_admin(identity)
+        from .agent_run import preview_custom_agent
+
+        data = await request.json()
+        question = str(data.get("question", "")).strip() or "What can you help me with?"
+        result = await preview_custom_agent(service, identity, data.get("spec") or {}, question)
+        return JSONResponse(result)
+
     async def memory_list(request, identity):
         # The caller's OWN long-term memories (scoped to their verified subject), for the
         # "what the brain remembers about you" panel. Empty for guests / when unconfigured.
@@ -341,6 +366,10 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/agent/run", ["POST"], agent_run)
     route("/api/agent/stream", ["POST"], agent_stream)
     route("/api/memory", ["GET"], memory_list)
+    route("/api/studio/agents", ["GET"], studio_agents)
+    route("/api/studio/agents", ["POST"], studio_agent_save)
+    route("/api/studio/agents/delete", ["POST"], studio_agent_delete)
+    route("/api/studio/agents/preview", ["POST"], studio_agent_preview)
     route("/api/link/suggestions", ["GET"], link_suggestions)
     route("/api/link/suggest-for", ["POST"], link_suggest_for)
     route("/api/link", ["POST"], link)

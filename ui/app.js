@@ -250,6 +250,7 @@ async function bootLive(me, docs) {
   startLivePoll(); // keep this tab current (picks up content added anywhere)
   ensureIdxTicker(); // live "indexing…" status while added content is pending
   renderAgentMemory(); // "what the brain remembers about you" (signed-in, non-guest)
+  loadCustomAgentNodes(); // put any Studio-authored specialists on the Agents map
   setPage("connect"); // Open on the Overview tab.
   maybeAutostartTour();
 }
@@ -709,6 +710,8 @@ function wireLive() {
   $("#draftsimplify").addEventListener("click", simplifyDraft);
   $("#draftsplit").addEventListener("click", enterSplitMode);
   $("#studioagain").addEventListener("click", resetStudio);
+  { const b = $("#assave"); if (b) b.addEventListener("click", saveAgent); }
+  { const b = $("#aspreview"); if (b) b.addEventListener("click", previewAgent); }
   $("#notedo").addEventListener("click", async () => {
     const title = $("#notetitle").value.trim(), content = $("#notebody").value.trim();
     if (!title && !content) return;
@@ -1796,6 +1799,38 @@ const A_NODES_PORTRAIT = Object.fromEntries(
 // Reflow only when the canvas is clearly taller than it is wide (a phone in portrait).
 const AN = () => (aH > aW * 1.05 ? A_NODES_PORTRAIT : A_NODES);
 
+// Agent Studio's custom specialists appear on the map too: injected as nodes off the
+// coordinator (with resting edges coord -> custom -> brain), so a Studio-authored agent is
+// visibly part of the live team. Re-applied whenever the registry is (re)loaded.
+let A_CUSTOM_EDGES = [];
+function applyCustomAgentNodes(agents) {
+  for (const D of [A_NODES, A_NODES_PORTRAIT]) {
+    for (const k of Object.keys(D)) if (D[k]._custom) delete D[k];
+  }
+  // Drop the previously-injected resting edges.
+  for (const e of A_CUSTOM_EDGES) {
+    const i = A_ALL_EDGES.findIndex((x) => x[0] === e[0] && x[1] === e[1]);
+    if (i >= 0) A_ALL_EDGES.splice(i, 1);
+  }
+  A_CUSTOM_EDGES = [];
+  (agents || []).forEach((a, i) => {
+    A_NODES[a.name] = { x: 0.33, y: Math.min(0.62 + i * 0.18, 0.96), label: a.name, sub: "custom specialist", kind: "agent", _custom: true };
+    A_NODES_PORTRAIT[a.name] = { x: 0.5, y: Math.min(0.78 + i * 0.08, 0.95), label: a.name, sub: "custom", kind: "agent", _custom: true };
+    A_CUSTOM_EDGES.push(["coord", a.name], [a.name, "brain"]);
+  });
+  for (const e of A_CUSTOM_EDGES) A_ALL_EDGES.push(e);
+}
+async function loadCustomAgentNodes() {
+  if (!LIVE) return;
+  try {
+    const r = await fetch(`${config.api_url}/api/studio/agents`, { headers: { authorization: `Bearer ${token()}` } });
+    if (!r.ok) return;
+    const data = await r.json();
+    applyCustomAgentNodes(data.agents || []);
+    if (typeof agentsDraw === "function" && typeof ax !== "undefined" && ax) agentsDraw();
+  } catch { /* best-effort: the map still renders the built-in team */ }
+}
+
 const A_SCENARIOS = {
   ask: {
     steps: [
@@ -1882,18 +1917,21 @@ function boxExit(c, dx, dy) {
 }
 // The connecting segment, trimmed to both boxes' borders so lines never cross text.
 function aSeg(a, b) {
-  const N = AN(); const pa = aPos(N[a]), pb = aPos(N[b]);
+  const N = AN(); if (!N[a] || !N[b]) return null; // tolerate a custom node absent in this layout
+  const pa = aPos(N[a]), pb = aPos(N[b]);
   let dx = pb.x - pa.x, dy = pb.y - pa.y; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
   return { p1: boxExit(pa, dx, dy), p2: boxExit(pb, -dx, -dy) };
 }
 function aEdge(a, b, active) {
-  const { p1, p2 } = aSeg(a, b);
+  const seg = aSeg(a, b); if (!seg) return;
+  const { p1, p2 } = seg;
   ax.beginPath(); ax.moveTo(p1.x, p1.y); ax.lineTo(p2.x, p2.y);
   ax.strokeStyle = active ? withAlpha(cssVar("--signal"), 0.9) : withAlpha(cssVar("--pulse"), 0.85);
   ax.lineWidth = active ? 2 : 1; ax.stroke();
 }
 function aParticle(a, b, t) {
-  const { p1, p2 } = aSeg(a, b);
+  const seg = aSeg(a, b); if (!seg) return;
+  const { p1, p2 } = seg;
   for (let k = 0; k < 6; k++) {
     const tt = t - k * 0.045; if (tt < 0 || tt > 1) continue;
     const x = p1.x + (p2.x - p1.x) * tt, y = p1.y + (p2.y - p1.y) * tt, s = 7 - k;
@@ -1902,7 +1940,8 @@ function aParticle(a, b, t) {
   }
 }
 function aNode(id, active) {
-  const n = AN()[id], p = aPos(n), col = aColor(n.kind);
+  const n = AN()[id]; if (!n) return; // custom node not present in the current layout
+  const p = aPos(n), col = aColor(n.kind);
   const w = aBoxW(), h = A_BOXH, x0 = p.x - w / 2, y0 = p.y - h / 2;
   const sandboxed = n.kind === "sandbox";
   // Opaque base first so an edge never shows through, then a tint if active. The
@@ -2095,6 +2134,102 @@ async function renderAgentMemory() {
       : `<li class="agentmemempty">Nothing yet. Ask the team a question and I'll remember what's useful about you — the domains and topics you work in — to make future answers more relevant.</li>`;
     wrap.hidden = false;
   } catch { wrap.hidden = true; }
+}
+
+// ---- Agent Studio: compose a custom specialist for the live team (admin-only) --------
+let AS_TOOLS = [];          // the tool palette the backend allows
+let AS_CAN_EDIT = false;    // is this caller a moderator/admin
+async function renderAgentStudio() {
+  const panel = $("#agentstudio"); if (!panel) return;
+  if (!LIVE || isGuest()) { panel.hidden = true; return; }
+  try {
+    const r = await fetch(`${config.api_url}/api/studio/agents`, { headers: { authorization: `Bearer ${token()}` } });
+    if (!r.ok) { panel.hidden = true; return; }
+    const data = await r.json();
+    AS_TOOLS = data.tools || [];
+    AS_CAN_EDIT = !!data.can_edit;
+    // The composer is admin-only: only a moderator (a team write grant) may author the
+    // shared team. Everyone else just doesn't see it.
+    panel.hidden = !AS_CAN_EDIT;
+    if (!AS_CAN_EDIT) return;
+    renderAsTools([]);
+    renderAsList(data.agents || []);
+  } catch { panel.hidden = true; }
+}
+function renderAsTools(selected) {
+  const box = $("#astools"); if (!box) return;
+  const sel = new Set(selected);
+  box.innerHTML = AS_TOOLS.map((t) =>
+    `<label class="astool"><input type="checkbox" value="${esc(t)}"${sel.has(t) ? " checked" : ""}/> ${esc(t)}</label>`
+  ).join("");
+}
+function asSelectedTools() {
+  return [...document.querySelectorAll("#astools input:checked")].map((i) => i.value);
+}
+function renderAsList(agents) {
+  const list = $("#aslist"); if (!list) return;
+  if (!agents.length) { list.innerHTML = `<li class="asempty">No custom specialists yet. Compose one on the left and it joins the team on the Agents page.</li>`; return; }
+  list.innerHTML = agents.map((a) => `
+    <li>
+      <div class="asli-main">
+        <div class="asli-name">${esc(a.name)}</div>
+        <div class="asli-desc">${esc(a.description || "")}</div>
+        <div class="asli-tools">${(a.tools || []).map(esc).join(" · ")}</div>
+      </div>
+      <button class="asdel" data-name="${esc(a.name)}">Delete</button>
+    </li>`).join("");
+  for (const b of list.querySelectorAll(".asdel")) b.addEventListener("click", () => deleteAgent(b.dataset.name));
+}
+function asMsg(text, kind) {
+  const el = $("#asmsg"); if (!el) return;
+  el.hidden = !text; el.textContent = text || ""; el.className = "asmsg" + (kind ? " " + kind : "");
+}
+function asSpec() {
+  return {
+    name: $("#asname").value.trim(),
+    description: $("#asdesc").value.trim(),
+    instruction: $("#asinstr").value.trim(),
+    tools: asSelectedTools(),
+  };
+}
+async function saveAgent() {
+  asMsg("Registering…");
+  try {
+    const r = await fetch(`${config.api_url}/api/studio/agents`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
+      body: JSON.stringify(asSpec()),
+    });
+    const data = await r.json();
+    if (!r.ok) { asMsg(data.error || "Could not register this specialist.", "err"); return; }
+    asMsg(`Registered “${data.name}”. It has joined the team on the Agents page.`, "ok");
+    $("#asname").value = $("#asdesc").value = $("#asinstr").value = "";
+    renderAsTools([]);
+    renderAgentStudio();
+  } catch (e) { asMsg("Could not register: " + String(e.message || e), "err"); }
+}
+async function deleteAgent(name) {
+  try {
+    const r = await fetch(`${config.api_url}/api/studio/agents/delete`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (r.ok) { asMsg(`Deleted “${name}”.`, "ok"); renderAgentStudio(); }
+  } catch { /* ignore */ }
+}
+async function previewAgent() {
+  const out = $("#asout"); const q = $("#asq").value.trim() || "What can you help me with?";
+  out.innerHTML = `<span class="asmuted">Previewing…</span>`;
+  try {
+    const r = await fetch(`${config.api_url}/api/studio/agents/preview`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
+      body: JSON.stringify({ spec: asSpec(), question: q }),
+    });
+    const data = await r.json();
+    out.textContent = r.ok ? (data.answer || "(no answer)") : (data.error || "Preview failed.");
+  } catch (e) { out.textContent = "Preview failed: " + String(e.message || e); }
 }
 
 // ---- Agent registry: model inventory + versioned prompts -------------------
@@ -2631,8 +2766,9 @@ function setPage(p) {
   $("#page-connect").hidden = p !== "connect";
   $("#page-arch").hidden = p !== "arch";
   $("#page-agents").hidden = p !== "agents";
+  if (p === "agents") loadCustomAgentNodes(); // reflect any Studio-authored specialists on the map
   const studio = $("#page-studio"); if (studio) studio.hidden = p !== "studio";
-  if (p === "studio") renderStudio();
+  if (p === "studio") { renderStudio(); renderAgentStudio(); }
   const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";
   if (p === "review") renderReview();
   for (const b of $("#pagetabs").querySelectorAll("button")) {
@@ -2868,6 +3004,12 @@ const TOUR = [
     title: "A governed AI platform",
     body: "Scroll down and every agent shows its <b>versioned, content-hashed prompt</b> and registered model, beside an inventory of the models the brain uses. Offline <b>evals</b> assert both the answer's correctness and the domain-isolation boundary on every build. Connect your own assistant like Claude in two clicks from the Agents connector on Overview.",
     why: "Enterprises need their AI to be auditable and tested, not a black box. Pinning prompts and models, and failing the build if a domain boundary ever leaks, is what makes that real.",
+  },
+  {
+    page: "studio", target: "#agentstudio",
+    title: "Grow the team in Agent Studio",
+    body: "The team isn't fixed. In <b>Studio</b>, a moderator can compose a new <b>custom specialist</b> — name it, tell the coordinator when to use it, write its system prompt, and pick which brain tools it may call — preview it against a question, then register it. It joins the live team on the Agents page. Its tools stay scoped to whoever runs it, so it never reaches more than that person may.",
+    why: "A platform people can extend beats a fixed set of agents. Because a custom specialist is <b>behaviour, not access</b> — its tools bind to the caller — you can grow the team without ever widening the security boundary.",
   },
   {
     page: "explore", target: ".graphpanel",

@@ -186,6 +186,8 @@ module "brain_service" {
     # The dynamic sharing overlay: per-owner files in the dedicated shares bucket.
     BRAIN_SHARES_STORE  = "gcs"
     BRAIN_SHARES_BUCKET = module.storage.shares_bucket
+    # Agent Studio's shared custom-specialist registry lives in the same shares bucket.
+    BRAIN_AGENTS_STORE = "gcs"
     # Community moderation reports: a single object in the shares bucket.
     BRAIN_REPORTS_STORE  = "gcs"
     BRAIN_REPORTS_BUCKET = module.storage.shares_bucket

@@ -141,6 +141,7 @@ class BrainService:
         curator=None,
         deleter: Deleter | None = None,
         reports_store: ReportsStore | None = None,
+        agent_store=None,
     ) -> None:
         # The index can be passed directly, or loaded lazily on first use. Lazy
         # loading lets a scale-to-zero container start (and pass its health check)
@@ -168,6 +169,11 @@ class BrainService:
         # notes land through. Both default to in-process/no-write, so the offline
         # core and tests are self-contained; the deployed brain wires GCS-backed ones.
         self.shares_store: SharesStore = shares_store or MemorySharesStore()
+        # Agent Studio's custom specialists (admin-authored, shared). In-memory by default;
+        # the deployed brain wires the GCS-backed store so a new specialist joins the team.
+        from ..agent.studio import MemoryAgentStore as _MemAgentStore
+
+        self.agent_store = agent_store or _MemAgentStore()
         self.note_gate = note_gate or MemoryGate()
         # Where an uploaded original file is kept (so a document can link to it).
         self.attachment_store: AttachmentStore = attachment_store or MemoryAttachmentStore()
@@ -571,6 +577,47 @@ class BrainService:
             if grant.write and grant.principal != WILDCARD and grant.principal in principals:
                 out.update(grant.domains)
         return sorted(out)
+
+    # ---- Agent Studio: admin-authored custom specialists (shared) -----------------
+    def is_studio_admin(self, identity: Identity) -> bool:
+        """May the caller author shared custom agents. An 'admin' here is a moderator of at
+        least one TEAM domain (holds an explicit, non-wildcard write grant) -- the same trust
+        that lets them edit/delete others' content. Guests never qualify."""
+        if identity.is_guest:
+            return False
+        return any(not is_personal_domain(d) for d in self.moderatable_domains(identity))
+
+    def _require_studio_admin(self, identity: Identity) -> None:
+        if not self.is_studio_admin(identity):
+            raise AccessError("composing shared agents requires moderator (team write) access")
+
+    def list_custom_agents(self, identity: Identity) -> dict:
+        """The registered custom specialists (visible to everyone, since they are part of the
+        shared team on the Agents map), plus whether this caller may edit them and the tool
+        palette a new specialist may draw from."""
+        from ..agent.studio import ALLOWED_TOOLS
+
+        return {
+            "agents": [s.to_dict() for s in self.agent_store.all()],
+            "can_edit": self.is_studio_admin(identity),
+            "tools": list(ALLOWED_TOOLS),
+        }
+
+    def save_custom_agent(self, identity: Identity, spec: dict) -> dict:
+        """Create or update a custom specialist. Admin-gated; validated (name, tool allow-list).
+        It joins the live team within the store's cache TTL, no redeploy."""
+        from ..agent.studio import AgentSpec
+
+        self._require_studio_admin(identity)
+        parsed = AgentSpec.from_dict(spec)
+        parsed.validate()
+        self.agent_store.put(parsed)
+        return {"status": "saved", "name": parsed.name}
+
+    def delete_custom_agent(self, identity: Identity, name: str) -> dict:
+        self._require_studio_admin(identity)
+        self.agent_store.delete(name)
+        return {"status": "deleted", "name": name}
 
     def edit_document(
         self,

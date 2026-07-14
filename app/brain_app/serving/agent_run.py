@@ -40,7 +40,8 @@ _CODE_RESULT_STEP = {
 
 
 def _agent_id(author: str) -> str:
-    return _AGENT_ID.get(author or "", "research")
+    # Built-ins map to their node id; a custom specialist's node id is its own name.
+    return _AGENT_ID.get(author or "", author or "research")
 
 
 def _error_frame(exc: Exception) -> dict:
@@ -58,9 +59,10 @@ def _error_frame(exc: Exception) -> dict:
 def _steps_for_call(author: str, name: str, args: dict) -> list[dict]:
     """Animation steps for one real tool call by one agent."""
     if name == "transfer_to_agent":
-        target = _AGENT_ID.get(str((args or {}).get("agent_name", "")), "research")
+        raw = str((args or {}).get("agent_name", ""))
+        target = _AGENT_ID.get(raw, raw or "research")  # a custom agent's node is its own name
         who = {"research": "researcher", "curate": "curator", "analyst": "analyst"}.get(
-            target, "specialist"
+            target, raw or "specialist"
         )
         return [{"edge": ["coord", target], "caption": f"Coordinator delegated to the {who}"}]
     who = _agent_id(author)
@@ -180,9 +182,15 @@ def _bound_tools(service: BrainService, identity: Identity):
             return f"Refused: {exc}"
         return f"Proposed into {domain} ({result.status}): {result.detail}"
 
+    # By tool name, so both the built-in specialists and Agent Studio's custom specialists can
+    # assemble their tool set from one caller-bound set (a custom agent's tools are therefore
+    # domain-scoped to whoever runs it, exactly like the researcher's).
     return {
-        "researcher": [search, answer, get_document, list_domains],
-        "curator": [search, get_document, propose_document],
+        "search": search,
+        "answer": answer,
+        "get_document": get_document,
+        "list_domains": list_domains,
+        "propose_document": propose_document,
     }
 
 
@@ -205,11 +213,15 @@ def _build_team(service: BrainService, identity: Identity, model: str):
         name="researcher",
         model=llm,
         instruction=prompt("researcher"),
-        tools=tools["researcher"],
+        tools=[tools["search"], tools["answer"], tools["get_document"], tools["list_domains"]],
         **leaf,
     )
     curator = LlmAgent(
-        name="curator", model=llm, instruction=prompt("curator"), tools=tools["curator"], **leaf
+        name="curator",
+        model=llm,
+        instruction=prompt("curator"),
+        tools=[tools["search"], tools["get_document"], tools["propose_document"]],
+        **leaf,
     )
     # The analyst carries no brain tools: only Gemini's server-side code sandbox, kept
     # isolated from the corpus. It computes over figures already in the conversation.
@@ -220,12 +232,46 @@ def _build_team(service: BrainService, identity: Identity, model: str):
         code_executor=code_executor(),
         **leaf,
     )
+    # Agent Studio's custom specialists join as further leaves; the coordinator's routing list
+    # is extended (see _coordinator_instruction) so it knows when to delegate to each -- that is
+    # what actually wires a Studio-authored agent into the live team.
+    custom = [
+        LlmAgent(
+            name=spec.name,
+            model=llm,
+            instruction=spec.instruction,
+            tools=[tools[t] for t in spec.tools if t in tools],
+            **leaf,
+        )
+        for spec in _custom_specs(service)
+    ]
     return LlmAgent(
         name="brain_agent",
         model=llm,
-        instruction=prompt("coordinator"),
-        sub_agents=[researcher, curator, analyst],
+        instruction=_coordinator_instruction(service),
+        sub_agents=[researcher, curator, analyst, *custom],
     )
+
+
+def _custom_specs(service):
+    """The registered custom specialists, tolerant of a store hiccup (never fail a run)."""
+    try:
+        return list(service.agent_store.all())
+    except Exception:
+        return []
+
+
+def _coordinator_instruction(service) -> str:
+    """The coordinator prompt, extended with a routing line per custom specialist so the
+    coordinator knows when to delegate to each. Built-ins are described in the base prompt."""
+    base = prompt("coordinator")
+    specs = _custom_specs(service)
+    if not specs:
+        return base
+    lines = "\n".join(
+        f"- transfer_to_agent(agent_name='{s.name}') for {s.description.strip()}" for s in specs
+    )
+    return f"{base}\n\nCustom specialists you may also transfer to:\n{lines}"
 
 
 def _guard_answer(text: str) -> str:
@@ -371,6 +417,40 @@ def run_agent(
     import asyncio
 
     return asyncio.run(run_agent_async(service, identity, query, model, session_id))
+
+
+async def preview_custom_agent(service, identity, spec: dict, question: str) -> dict:
+    """Run a single custom specialist (from an as-yet-unsaved spec) against a sample question,
+    so an admin can preview it before registering. Its tools bind to the caller, so the preview
+    runs under exactly the same domain scope a real run would."""
+    from google.adk.agents import LlmAgent
+    from google.adk.runners import InMemoryRunner
+    from google.genai import types
+
+    from ..agent.model import agent_model
+    from ..agent.studio import AgentSpec
+
+    parsed = AgentSpec.from_dict(spec)
+    parsed.validate()
+    tools = _bound_tools(service, identity)
+    agent = LlmAgent(
+        name=parsed.name,
+        model=agent_model(os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")),
+        instruction=parsed.instruction,
+        tools=[tools[t] for t in parsed.tools if t in tools],
+    )
+    user = identity.subject or "user"
+    runner = InMemoryRunner(agent=agent, app_name="brain-preview")
+    session = await runner.session_service.create_session(app_name="brain-preview", user_id=user)
+    message = types.Content(role="user", parts=[types.Part(text=question)])
+    answer = ""
+    async for event in runner.run_async(
+        user_id=user, session_id=session.id, new_message=message, run_config=_run_config()
+    ):
+        for part in (event.content.parts if event.content else []) or []:
+            if getattr(part, "text", None) and event.is_final_response():
+                answer = part.text
+    return {"answer": _guard_answer(answer) or "(no answer returned)", "name": parsed.name}
 
 
 def _sse(obj: dict) -> str:

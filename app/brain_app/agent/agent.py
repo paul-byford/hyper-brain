@@ -104,11 +104,37 @@ def _live_team() -> LlmAgent:
         code_executor=code_executor(),
         **leaf,
     )
+    # Agent Studio's custom specialists (admin-authored, shared) join as further leaves, each
+    # with an MCP toolset filtered to its allow-list, and the coordinator's routing list is
+    # extended so it knows when to delegate to each.
+    from .studio import get_agent_store
+
+    specs = []
+    try:
+        specs = list(get_agent_store().all())
+    except Exception:
+        specs = []
+    custom = [
+        LlmAgent(
+            name=s.name,
+            model=model,
+            instruction=s.instruction,
+            tools=[_live_toolset(list(s.tools))],
+            **leaf,
+        )
+        for s in specs
+    ]
+    instruction = prompt("coordinator")
+    if specs:
+        lines = "\n".join(
+            f"- transfer_to_agent(agent_name='{s.name}') for {s.description.strip()}" for s in specs
+        )
+        instruction = f"{instruction}\n\nCustom specialists you may also transfer to:\n{lines}"
     return LlmAgent(
         name="brain_agent",
         model=model,
-        instruction=prompt("coordinator"),
-        sub_agents=[researcher, curator, analyst],
+        instruction=instruction,
+        sub_agents=[researcher, curator, analyst, *custom],
     )
 
 

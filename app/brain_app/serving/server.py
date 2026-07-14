@@ -314,6 +314,7 @@ def _load_service() -> BrainService:
     BRAIN_SYNTH (extractive|gemini), and the proposal gate (memory|git|gcs).
     Auth and its audience are read by get_verifier from BRAIN_AUTH*.
     """
+    from ..agent.studio import get_agent_store
     from ..auth import get_shares_store
     from ..config import policy_source
     from ..embeddings import get_embeddings
@@ -356,6 +357,7 @@ def _load_service() -> BrainService:
         reviewer=get_reviewer(),
         reindexer=get_reindexer(),
         reports_store=get_reports_store(),
+        agent_store=get_agent_store(),
     )
 
 
