@@ -175,8 +175,9 @@ module "brain_service" {
     BRAIN_AUTH_AUDIENCE = var.brain_audience
     BRAIN_AUTH_ISSUER   = "https://accounts.google.com"
     # Policy from the bucket (grant rollout) and proposals staged to the corpus bucket.
-    BRAIN_POLICY           = local.policy_uri
-    BRAIN_PROPOSE_GATE     = "gcs"
+    BRAIN_POLICY       = local.policy_uri
+    BRAIN_PROPOSE_GATE = "gcs"
+    # (BRAIN_CODE_INTERPRETER is merged in below from local.code_interpreter_env.)
     BRAIN_PROPOSALS_BUCKET = module.storage.corpus_bucket
     # Personal notes (add_note) land live into the caller's personal domain in the
     # corpus bucket, so the next index build picks them up like any other content.
@@ -196,7 +197,7 @@ module "brain_service" {
     BRAIN_OTEL         = local.otel_exporter
     # When the OAuth AS is live, accept both Google ID tokens (the agent) and our
     # AS's access tokens (remote connectors); otherwise Google only.
-    }, local.oauth_live ? {
+    }, local.code_interpreter_env, local.oauth_live ? {
     BRAIN_AUTH         = "composite"
     BRAIN_OAUTH_ISSUER = var.auth_audience
     BRAIN_OAUTH_JWKS   = "${var.auth_audience}/jwks"
@@ -225,9 +226,27 @@ module "agent_service" {
     # The agent mints an ID token for this audience to call the brain.
     BRAIN_AUDIENCE = module.brain_service.uri
     BRAIN_OTEL     = local.otel_exporter
-  })
+  }, local.code_interpreter_env)
 
   depends_on = [google_project_service.base]
+}
+
+# Optional managed sandbox for the analyst: the Vertex AI Code Interpreter extension. Off by
+# default -- the analyst then runs its Python in Gemini's in-region built-in sandbox. When
+# enabled, the extension's resource name flows to the brain + agent as BRAIN_CODE_INTERPRETER
+# and the analyst uses the managed, stateful sandbox instead. NOTE: the Code Interpreter is
+# us-central1-only, so enabling this takes code execution CROSS-REGION from europe-west2.
+module "code_interpreter" {
+  source     = "./modules/code_interpreter"
+  count      = var.enable_code_interpreter ? 1 : 0
+  project_id = var.project_id
+  location   = var.code_interpreter_location
+}
+
+locals {
+  code_interpreter_env = var.enable_code_interpreter ? {
+    BRAIN_CODE_INTERPRETER = module.code_interpreter[0].resource_name
+  } : {}
 }
 
 module "ui_service" {
@@ -243,7 +262,17 @@ module "ui_service" {
   # enforces auth). Controlled stays perimeter-internal.
   invoker_members = concat(var.invoker_members, !local.is_controlled ? ["allUsers"] : [])
   labels          = var.labels
-  env             = { BRAIN_PROFILE = var.profile }
+  # The SPA's live config (api/auth/mcp URLs) is injected here and served at runtime by
+  # ui/serve.py, so the deployed demo-vs-live mode is declarative and never depends on what
+  # data/config.json happened to be baked into the image. auth_url only appears once the AS
+  # is live (second apply), which is exactly when browser sign-in should switch on.
+  env = merge({
+    BRAIN_PROFILE    = var.profile
+    BRAIN_UI_API_URL = module.brain_service.uri
+    BRAIN_UI_MCP_URL = "${module.brain_service.uri}/mcp"
+    }, local.oauth_live ? {
+    BRAIN_UI_AUTH_URL = var.auth_audience
+  } : {})
 
   depends_on = [google_project_service.base]
 }

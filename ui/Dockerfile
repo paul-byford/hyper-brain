@@ -1,8 +1,11 @@
 # Image for the Brain Explorer (Cloud Run, IAM-gated). A dependency-free static
-# SPA served by Python's http.server. The exported data (data/index.json,
-# data/policy.json) is baked in at build time by `brain up`, which runs the
-# exporter first; re-run `brain up` to refresh the snapshot. The UI holds no
-# secrets and enforces nothing (ARCHITECTURE.md section 9).
+# SPA served by serve.py. The exported data snapshot (data/index.json,
+# data/policy.json, data/agents.json) is baked in at build time by `brain up`,
+# which runs the exporter first; re-run `brain up` to refresh the snapshot. The
+# live config (data/config.json: api/auth/mcp URLs) is NOT relied on from the
+# image -- serve.py serves it from BRAIN_UI_{API,AUTH,MCP}_URL set on the service,
+# so demo-vs-live never depends on the baked file. The UI holds no secrets and
+# enforces nothing (ARCHITECTURE.md section 9).
 FROM python:3.13-slim
 
 ENV PORT=8080

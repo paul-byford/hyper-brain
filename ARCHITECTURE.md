@@ -300,11 +300,21 @@ up their own agent.
   (so the agent inherits the same scale-to-zero and IAM story as the brain), and
   it ships a **dev web UI** we reuse for the demo (section 9).
 - **A multi-agent team (live):** the agent is a **coordinator** that delegates over
-  ADK agent transfer to two sub-agents, each with its own MCP toolset filtered to its
-  role: a **researcher** (read tools: search/answer/get_document/list_domains) and a
-  **curator** (search/get_document/**propose_document**). So a question routes to the
-  researcher, and "draft/add a document" routes to the curator, whose proposal lands
-  in the **human review queue** (section 12), never live. The brain enforces the ACL
+  ADK agent transfer to three sub-agents. Two are brain-facing, each with its own MCP
+  toolset filtered to its role: a **researcher** (read tools: search/answer/get_document/
+  list_domains) and a **curator** (search/get_document/**propose_document**). The third
+  is an **analyst** that carries **no brain tools** and instead *writes* Python that runs
+  in Gemini's **server-side code sandbox** (ADK `BuiltInCodeExecutor`): the code executes
+  on Google's side, in a Google-managed environment with no network or data access, **not
+  in our process** — so quantitative questions are *computed* and checkable rather than
+  guessed. The analyst itself is a normal Gemini agent (not a sandbox); being tool-less is
+  what keeps it from reading the corpus. For a heavier, stateful sandbox, setting
+  `enable_code_interpreter` provisions the managed **Vertex AI Code Interpreter** extension
+  and points the analyst at it (`VertexAiCodeExecutor`); that extension is **us-central1-only**,
+  so it trades in-region execution for the managed sandbox (see infra/modules/code_interpreter).
+  A question routes to the researcher, "draft/add a document" to
+  the curator (whose proposal lands in the **human review queue** (section 12), never
+  live), and anything needing arithmetic to the analyst. The brain enforces the ACL
   behind every tool, so the whole team is scoped to what the caller may see and write.
 - **Deterministic offline tier:** the same agent runs as a single researcher backed
   by a `FakeBrainModel` and in-process tools, so the golden and isolation evals

@@ -22,6 +22,96 @@ def test_transfer_maps_to_the_coordinator_edge():
     assert to_curate[0]["edge"] == ["coord", "curate"]
 
 
+def test_transfer_to_analyst_maps_to_its_edge():
+    steps = _steps_for_call("brain_agent", "transfer_to_agent", {"agent_name": "analyst"})
+    assert steps[0]["edge"] == ["coord", "analyst"]
+
+
+def test_code_run_then_result_map_to_the_sandbox_edges_and_block():
+    types = pytest.importorskip("google.genai").types
+    from brain_app.serving.agent_run import frames_for_code_part
+
+    pending: dict = {}
+    run = frames_for_code_part(
+        types.Part(executable_code=types.ExecutableCode(code="print(2+2)", language="PYTHON")),
+        pending,
+    )
+    assert run[0]["step"]["edge"] == ["analyst", "sandbox"]
+    assert pending["code"] == "print(2+2)"  # code stashed for pairing with the result
+
+    result = frames_for_code_part(
+        types.Part(
+            code_execution_result=types.CodeExecutionResult(outcome="OUTCOME_OK", output="4\n")
+        ),
+        pending,
+    )
+    edges = [f["step"]["edge"] for f in result if "step" in f]
+    blocks = [f["code"] for f in result if "code" in f]
+    assert ["sandbox", "analyst"] in edges
+    assert blocks and blocks[0] == {"code": "print(2+2)", "output": "4\n", "ok": True}
+
+
+def test_code_result_flags_a_failed_outcome():
+    types = pytest.importorskip("google.genai").types
+    from brain_app.serving.agent_run import frames_for_code_part
+
+    frames = frames_for_code_part(
+        types.Part(
+            code_execution_result=types.CodeExecutionResult(outcome="OUTCOME_FAILED", output="Boom")
+        ),
+        {},
+    )
+    block = next(f["code"] for f in frames if "code" in f)
+    assert block["ok"] is False
+
+
+def test_live_team_has_an_analyst_with_an_isolated_code_sandbox():
+    # The UI's live run builds the team in-process (no MCP token needed), so this checks
+    # the team the caller actually gets: a third specialist that computes in a sandbox.
+    pytest.importorskip("google.adk")
+    from brain_app.serving.agent_run import _build_team
+
+    class _Identity:
+        subject = "sub-1"
+
+    team = _build_team(None, _Identity(), "gemini-2.5-flash")
+    analysts = [a for a in team.sub_agents if a.name == "analyst"]
+    assert analysts, "the live team should include an analyst sub-agent"
+    analyst = analysts[0]
+    assert analyst.code_executor is not None  # it computes in a sandbox
+    assert not analyst.tools  # and carries no brain tools (isolated from the corpus)
+    # Gemini rejects the built-in code tool alongside any function tool, so the analyst
+    # must disallow the auto-injected transfer_to_agent (carry only the sandbox).
+    assert analyst.disallow_transfer_to_parent and analyst.disallow_transfer_to_peers
+
+
+def test_code_executor_selects_managed_sandbox_when_configured(monkeypatch):
+    # Default (env unset) -> Gemini's in-region built-in sandbox. With
+    # BRAIN_CODE_INTERPRETER set -> the managed Vertex Code Interpreter (us-central1).
+    pytest.importorskip("google.adk")
+    import google.adk.code_executors as ce
+    from google.adk.code_executors import BuiltInCodeExecutor
+
+    from brain_app.agent.code_executor import code_executor
+
+    monkeypatch.delenv("BRAIN_CODE_INTERPRETER", raising=False)
+    assert isinstance(code_executor(), BuiltInCodeExecutor)
+
+    # A real VertexAiCodeExecutor calls the extension API on construction, so stub it to
+    # just record the resource name it was pointed at.
+    captured: dict = {}
+
+    class _FakeVertex:
+        def __init__(self, resource_name=None):
+            captured["resource_name"] = resource_name
+
+    monkeypatch.setattr(ce, "VertexAiCodeExecutor", _FakeVertex)
+    resource = "projects/p/locations/us-central1/extensions/123"
+    monkeypatch.setenv("BRAIN_CODE_INTERPRETER", resource)
+    assert isinstance(code_executor(), _FakeVertex)
+    assert captured["resource_name"] == resource
+
+
 def test_search_lights_brain_then_corpus():
     edges = [s["edge"] for s in _steps_for_call("researcher", "search", {})]
     assert edges == [["research", "brain"], ["brain", "corpus"]]

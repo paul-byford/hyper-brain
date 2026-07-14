@@ -29,7 +29,7 @@ def test_offline_agent_uses_fake_model_and_brain_tools():
     }
 
 
-def test_live_agent_is_a_coordinator_delegating_to_researcher_and_curator(monkeypatch):
+def test_live_agent_is_a_coordinator_delegating_to_three_specialists(monkeypatch):
     monkeypatch.setenv("BRAIN_URL", "http://localhost:8080/mcp")
     monkeypatch.setenv("BRAIN_TOKEN", "test-token")
     from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
@@ -37,9 +37,9 @@ def test_live_agent_is_a_coordinator_delegating_to_researcher_and_curator(monkey
     coordinator = build_brain_agent("live")
     # The coordinator delegates; it holds no tools of its own.
     by_name = {a.name: a for a in coordinator.sub_agents}
-    assert set(by_name) == {"researcher", "curator"}
+    assert set(by_name) == {"researcher", "curator", "analyst"}
 
-    # Each sub-agent gets its own MCP toolset, filtered to exactly its role's tools.
+    # Each brain-facing sub-agent gets its own MCP toolset, filtered to its role's tools.
     researcher_tools = by_name["researcher"].tools[0]
     curator_tools = by_name["curator"].tools[0]
     assert isinstance(researcher_tools, MCPToolset) and isinstance(curator_tools, MCPToolset)
@@ -47,6 +47,14 @@ def test_live_agent_is_a_coordinator_delegating_to_researcher_and_curator(monkey
     assert set(curator_tools.tool_filter) == set(CURATE_TOOLS)
     # The curator can propose (write path); the researcher cannot.
     assert "propose_document" in CURATE_TOOLS and "propose_document" not in RESEARCH_TOOLS
+
+    # The analyst has a code sandbox and no brain tools, so it is isolated from the corpus.
+    # It also disallows transfer, so its Gemini request carries only the built-in code tool
+    # (mixing that with the auto-injected transfer_to_agent is a 400 from Gemini).
+    analyst = by_name["analyst"]
+    assert analyst.code_executor is not None
+    assert not analyst.tools
+    assert analyst.disallow_transfer_to_parent and analyst.disallow_transfer_to_peers
 
 
 def test_unknown_mode_rejected():

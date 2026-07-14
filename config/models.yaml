@@ -6,7 +6,7 @@
 version: 1
 models:
   - id: gemini-2.5-flash
-    purpose: Grounded answer synthesis, the ADK agent team, and Studio content curation (raw-to-wiki, simplify, split into linked notes).
+    purpose: Grounded answer synthesis, the ADK agent team (including the analyst's sandboxed code execution), and Studio content curation (raw-to-wiki, simplify, split into linked notes).
     provider: Google Vertex AI
     region: europe-west2
     modality: text-generation

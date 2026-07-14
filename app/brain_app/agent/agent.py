@@ -69,6 +69,11 @@ def _live_toolset(tool_filter: list[str]):
 
 
 def _live_team() -> LlmAgent:
+    # The analyst runs its Python in a server-side Google sandbox (managed Vertex Code
+    # Interpreter when configured, else Gemini's built-in in-region sandbox). It carries no
+    # brain tools, so the sandbox stays isolated from the corpus.
+    from .code_executor import code_executor
+
     model = os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
     researcher = LlmAgent(
         name="researcher",
@@ -82,11 +87,22 @@ def _live_team() -> LlmAgent:
         instruction=prompt("curator"),
         tools=[_live_toolset(CURATE_TOOLS)],
     )
+    analyst = LlmAgent(
+        name="analyst",
+        model=model,
+        instruction=prompt("analyst"),
+        code_executor=code_executor(),
+        # Gemini rejects a request that mixes the built-in code-execution tool with any
+        # function tool, and a sub-agent is otherwise auto-given transfer_to_agent. So the
+        # analyst disallows transfer: it carries ONLY the sandbox, answers, and the run ends.
+        disallow_transfer_to_parent=True,
+        disallow_transfer_to_peers=True,
+    )
     return LlmAgent(
         name="brain_agent",
         model=model,
         instruction=prompt("coordinator"),
-        sub_agents=[researcher, curator],
+        sub_agents=[researcher, curator, analyst],
     )
 
 

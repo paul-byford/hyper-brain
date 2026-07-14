@@ -19,7 +19,24 @@ from ..prompts import prompt
 from .service import AccessError, BrainService, DocumentNotFound
 
 # Which animation edges (Agents page node ids) a given agent+tool lights up.
-_AGENT_ID = {"researcher": "research", "curator": "curate", "brain_agent": "coord"}
+_AGENT_ID = {
+    "researcher": "research",
+    "curator": "curate",
+    "analyst": "analyst",
+    "brain_agent": "coord",
+}
+
+# Animation steps for one sandbox code run by the analyst (BuiltInCodeExecutor runs the
+# Python in Gemini's server-side sandbox). Kept as module constants so the UI mapping is
+# unit-testable without a live model.
+_CODE_RUN_STEP = {
+    "edge": ["analyst", "sandbox"],
+    "caption": "Analyst wrote Python and ran it in the sandbox",
+}
+_CODE_RESULT_STEP = {
+    "edge": ["sandbox", "analyst"],
+    "caption": "Sandbox returned the computed result",
+}
 
 
 def _agent_id(author: str) -> str:
@@ -42,10 +59,12 @@ def _steps_for_call(author: str, name: str, args: dict) -> list[dict]:
     """Animation steps for one real tool call by one agent."""
     if name == "transfer_to_agent":
         target = _AGENT_ID.get(str((args or {}).get("agent_name", "")), "research")
-        who = "researcher" if target == "research" else "curator"
+        who = {"research": "researcher", "curate": "curator", "analyst": "analyst"}.get(
+            target, "specialist"
+        )
         return [{"edge": ["coord", target], "caption": f"Coordinator delegated to the {who}"}]
     who = _agent_id(author)
-    label = {"research": "Researcher", "curate": "Curator"}.get(who, "Agent")
+    label = {"research": "Researcher", "curate": "Curator", "analyst": "Analyst"}.get(who, "Agent")
     if name in ("search", "get_document", "list_domains"):
         steps = [
             {"edge": [who, "brain"], "caption": f"{label} called {name} over the governed brain"}
@@ -75,13 +94,38 @@ def _steps_for_call(author: str, name: str, args: dict) -> list[dict]:
     return [{"edge": [who, "brain"], "caption": f"{label} called {name}"}]
 
 
+def frames_for_code_part(part, pending: dict) -> list[dict]:
+    """SSE payloads for one code-execution part from the analyst.
+
+    ``BuiltInCodeExecutor`` runs the Python in Gemini's server-side sandbox and returns
+    an ``executable_code`` part (the code) and a ``code_execution_result`` part (the
+    output); they may arrive in one event or two, so ``pending`` carries the code text
+    across. Emits the "wrote + ran" step when the code appears, then the "result" step
+    plus a ``{"code": ...}`` block (code + output) the UI renders when the sandbox returns.
+    """
+    out: list[dict] = []
+    executable = getattr(part, "executable_code", None)
+    if executable is not None:
+        pending["code"] = executable.code or ""
+        out.append({"step": _CODE_RUN_STEP})
+    result = getattr(part, "code_execution_result", None)
+    if result is not None:
+        ok = str(getattr(result, "outcome", "")).endswith("OK")
+        out.append({"step": _CODE_RESULT_STEP})
+        out.append(
+            {"code": {"code": pending.get("code", ""), "output": result.output or "", "ok": ok}}
+        )
+        pending["code"] = ""
+    return out
+
+
 def build_trace(query: str, calls: list[tuple], answer: str, final_author: str) -> dict:
     """Assemble the animation trace from the real (author, tool, args) calls."""
     steps = [{"edge": ["you", "coord"], "caption": f"You asked: “{query.strip()[:80]}”"}]
     for author, name, args in calls:
         steps.extend(_steps_for_call(author, name, args))
     dest = _agent_id(final_author)
-    label = {"research": "Researcher", "curate": "Curator"}.get(dest, "Agent")
+    label = {"research": "Researcher", "curate": "Curator", "analyst": "Analyst"}.get(dest, "Agent")
     steps.append({"edge": [dest, "you"], "caption": f"{label} responded to you"})
     return {"steps": steps, "answer": answer}
 
@@ -161,8 +205,10 @@ def _model(model: str):
 def _build_team(service: BrainService, identity: Identity, model: str):
     from google.adk.agents import LlmAgent
 
+    from ..agent.code_executor import code_executor
+
     tools = _bound_tools(service, identity)
-    # One retry-configured model instance, shared across the three agents.
+    # One retry-configured model instance, shared across the agents.
     llm = _model(model)
     researcher = LlmAgent(
         name="researcher", model=llm, instruction=prompt("researcher"), tools=tools["researcher"]
@@ -170,11 +216,24 @@ def _build_team(service: BrainService, identity: Identity, model: str):
     curator = LlmAgent(
         name="curator", model=llm, instruction=prompt("curator"), tools=tools["curator"]
     )
+    # The analyst carries no brain tools: only Gemini's server-side code sandbox, kept
+    # isolated from the corpus. It computes over figures already in the conversation.
+    analyst = LlmAgent(
+        name="analyst",
+        model=llm,
+        instruction=prompt("analyst"),
+        code_executor=code_executor(),
+        # Gemini rejects mixing the built-in code-execution tool with any function tool, and
+        # a sub-agent is otherwise auto-given transfer_to_agent. So the analyst disallows
+        # transfer: it carries ONLY the sandbox, answers directly, and the run ends there.
+        disallow_transfer_to_parent=True,
+        disallow_transfer_to_peers=True,
+    )
     return LlmAgent(
         name="brain_agent",
         model=llm,
         instruction=prompt("coordinator"),
-        sub_agents=[researcher, curator],
+        sub_agents=[researcher, curator, analyst],
     )
 
 
@@ -192,6 +251,8 @@ async def run_agent_async(
     session = await runner.session_service.create_session(app_name="brain", user_id=user)
 
     calls: list[tuple] = []
+    code_blocks: list[dict] = []
+    pending_code: dict = {}
     answer = ""
     final_author = "researcher"
     async for event in runner.run_async(
@@ -204,10 +265,16 @@ async def run_agent_async(
             call = getattr(part, "function_call", None)
             if call is not None:
                 calls.append((author, call.name, dict(call.args or {})))
+            for frame in frames_for_code_part(part, pending_code):
+                if "code" in frame:
+                    code_blocks.append(frame["code"])
             if getattr(part, "text", None) and event.is_final_response():
                 answer = part.text
                 final_author = author
-    return build_trace(query, calls, answer, final_author)
+    trace = build_trace(query, calls, answer, final_author)
+    if code_blocks:
+        trace["code"] = code_blocks[-1]
+    return trace
 
 
 def run_agent(
@@ -242,6 +309,7 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
 
     final_author = "researcher"
     answer = ""
+    pending_code: dict = {}
     try:
         team = _build_team(service, identity, model)
         runner = InMemoryRunner(agent=team, app_name="brain")
@@ -257,6 +325,8 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
                 if call is not None:
                     for step in _steps_for_call(author, call.name, dict(call.args or {})):
                         yield _sse({"step": step})
+                for frame in frames_for_code_part(part, pending_code):
+                    yield _sse(frame)
                 if getattr(part, "text", None) and event.is_final_response():
                     answer = part.text
                     final_author = author
@@ -265,6 +335,6 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
         return
 
     dest = _agent_id(final_author)
-    label = {"research": "Researcher", "curate": "Curator"}.get(dest, "Agent")
+    label = {"research": "Researcher", "curate": "Curator", "analyst": "Analyst"}.get(dest, "Agent")
     yield _sse({"step": {"edge": [dest, "you"], "caption": f"{label} responded to you"}})
     yield _sse({"done": True, "answer": answer})

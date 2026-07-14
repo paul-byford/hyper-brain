@@ -175,3 +175,21 @@ variable "workforce_pool_issuer_uri" {
   type        = string
   default     = ""
 }
+
+variable "enable_code_interpreter" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Give the analyst the managed Vertex AI Code Interpreter sandbox instead of Gemini's
+    in-region built-in one. When true, terraform provisions the extension (via
+    scripts/provision_code_interpreter.py) and passes BRAIN_CODE_INTERPRETER to the brain
+    and agent. NOTE: the Code Interpreter is us-central1-only, so enabling this runs the
+    analyst's code CROSS-REGION from the europe-west2 stack.
+  EOT
+}
+
+variable "code_interpreter_location" {
+  type        = string
+  default     = "us-central1"
+  description = "Region for the Code Interpreter extension (only us-central1 is supported)."
+}

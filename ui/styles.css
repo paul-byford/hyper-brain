@@ -716,6 +716,22 @@ body.guest #username { color: var(--signal-ink); }
 .agentanswerbody { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
 .agentlivehint { flex-basis: 100%; margin: 2px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
 .agentlivehint b { color: var(--ink); }
+/* The analyst's sandbox run: a dashed, coral-tinted panel echoing the sandbox node, so
+   the code + output read as "ran in an isolated environment", not part of the corpus. */
+.agentcode {
+  border: 1.5px dashed color-mix(in srgb, var(--coral) 60%, var(--hair));
+  background: color-mix(in srgb, var(--coral) 6%, var(--panel));
+  border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px;
+}
+.agentcode[hidden] { display: none; }
+.agentcodelbl { display: flex; align-items: center; gap: 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: color-mix(in srgb, var(--coral) 40%, var(--ink)); }
+.agentcodeok { color: var(--coral); text-transform: none; letter-spacing: 0; }
+.agentcodeok.bad { color: #d9820b; }
+.agentcodeoutlbl { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.agentcodesrc, .agentcodeout { margin: 0; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-x: auto; }
+.agentcodesrc { color: var(--ink); }
+.agentcodeout { color: color-mix(in srgb, var(--coral) 30%, var(--ink)); font-weight: 600; }
+.adot-sandbox { background: var(--coral); }
 
 /* ---- Autolinker: connect your notes (personal space) ---- */
 .linksbox { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hair); display: flex; flex-direction: column; gap: 9px; }
@@ -760,13 +776,16 @@ body.guest #username { color: var(--signal-ink); }
 .studioinput.collapsed .body { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
 @media (prefers-reduced-motion: reduce) { .studioinput .body, .studioinput .srctoggle .chev { transition: none; } }
 .studiofield { margin-bottom: 10px; }
-.studiofield input[type="url"], .studiofield input[type="text"], #studiotext {
+.studiofield input[type="url"], .studiofield input[type="text"], #studiotext, #studiochat {
   width: 100%; background: var(--panel-2); border: 1px solid var(--hair); color: var(--ink);
   font-family: var(--mono); font-size: 12.5px; padding: 9px 11px; box-sizing: border-box;
 }
 .studiofield input + input { margin-top: 8px; }
 .studiohint { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
-#studiotext { resize: vertical; line-height: 1.5; }
+#studiotext, #studiochat { resize: vertical; line-height: 1.5; }
+/* Transcript picker sits on its own line under the box, sized to its label. */
+#studiochatfilebtn { display: block; width: fit-content; margin-top: 8px; }
+#studiochatfilename { display: block; margin-top: 6px; }
 .studiofilename { color: var(--muted); font-size: 11px; }
 .studiotoggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink); margin: 4px 0 12px; cursor: pointer; }
 .studioinput .gobtn { width: 100%; }

@@ -1758,31 +1758,34 @@ let aMode = "demo";
 let aQueue = [], aCur = null, aStreamDone = false, aLiveAnswer = "", aAnswerShown = false, aQuota = false;
 let aStepNo = 0; // count of live steps shown so far (for numbering the caption)
 let aFiring = false; // submitted, awaiting the first real event: pulse the You box
+let aLiveCode = null; // the analyst's last sandbox run: { code, output, ok }
 
 // Positions are normalised (0..1). Left: you. The coordinator is a hub that fans out
 // to its two specialists (researcher up, curator down), so a delegation edge never
 // crosses the other specialist. Then the governed brain (MCP), then the resources.
 const A_NODES = {
-  you:     { x: 0.115, y: 0.50, label: "You", sub: "the caller", kind: "out" },
-  coord:   { x: 0.30,  y: 0.50, label: "Coordinator", sub: "routes the request", kind: "agent" },
-  research:{ x: 0.45,  y: 0.24, label: "Researcher", sub: "read tools", kind: "agent" },
-  curate:  { x: 0.45,  y: 0.76, label: "Curator", sub: "write tools", kind: "agent" },
-  brain:   { x: 0.645, y: 0.50, label: "Brain · MCP", sub: "enforces the domain ACL", kind: "brain" },
-  gemini:  { x: 0.87,  y: 0.22, label: "Gemini · Vertex", sub: "in-tenancy synthesis", kind: "res" },
-  corpus:  { x: 0.87,  y: 0.50, label: "Corpus + index", sub: "hybrid retrieval", kind: "res" },
-  review:  { x: 0.87,  y: 0.80, label: "Review queue", sub: "human approval", kind: "res" },
+  you:     { x: 0.10,  y: 0.40, label: "You", sub: "the caller", kind: "out" },
+  coord:   { x: 0.28,  y: 0.40, label: "Coordinator", sub: "routes the request", kind: "agent" },
+  research:{ x: 0.45,  y: 0.16, label: "Researcher", sub: "read tools", kind: "agent" },
+  analyst: { x: 0.45,  y: 0.52, label: "Analyst", sub: "writes Python", kind: "agent" },
+  curate:  { x: 0.45,  y: 0.84, label: "Curator", sub: "write tools", kind: "agent" },
+  brain:   { x: 0.645, y: 0.40, label: "Brain · MCP", sub: "enforces the domain ACL", kind: "brain" },
+  sandbox: { x: 0.645, y: 0.80, label: "Python sandbox", sub: "runs the code · isolated", kind: "sandbox" },
+  gemini:  { x: 0.87,  y: 0.16, label: "Gemini · Vertex", sub: "in-tenancy synthesis", kind: "res" },
+  corpus:  { x: 0.87,  y: 0.40, label: "Corpus + index", sub: "hybrid retrieval", kind: "res" },
+  review:  { x: 0.87,  y: 0.66, label: "Review queue", sub: "human approval", kind: "res" },
 };
 
-// Portrait layout for narrow (phone) canvases: the same flow reflowed top-to-bottom
-// so the eight boxes fit without clipping. You → Coordinator fan out to the two
-// specialists, down to the Brain, then out to its three resources. Same ids/labels;
-// only the coordinates differ. Chosen at draw time by aspect ratio, so desktop (a wide
-// canvas) always keeps the original horizontal layout.
+// Portrait layout for narrow (phone) canvases: the same flow reflowed top-to-bottom so
+// the ten boxes fit without clipping. You → Coordinator fan out to the three specialists;
+// researcher/curator reach the Brain, the analyst its own isolated sandbox; then the
+// brain's resources. Same ids/labels; only the coordinates differ. Chosen at draw time by
+// aspect ratio, so desktop (a wide canvas) always keeps the horizontal layout.
 const A_LAYOUT_PORTRAIT = {
-  you:      [0.5,  0.07], coord:   [0.5,  0.21],
-  research: [0.27, 0.37], curate:  [0.73, 0.37],
-  brain:    [0.5,  0.53],
-  gemini:   [0.27, 0.69], corpus:  [0.73, 0.69], review: [0.5, 0.85],
+  you:      [0.5,  0.05], coord:   [0.5,  0.15],
+  research: [0.24, 0.27], analyst: [0.5, 0.27], curate:  [0.76, 0.27],
+  brain:    [0.34, 0.45], sandbox: [0.66, 0.45],
+  gemini:   [0.22, 0.63], corpus:  [0.5, 0.63], review: [0.78, 0.63],
 };
 const A_NODES_PORTRAIT = Object.fromEntries(
   Object.entries(A_NODES).map(([k, n]) => [k, { ...n, x: A_LAYOUT_PORTRAIT[k][0], y: A_LAYOUT_PORTRAIT[k][1] }]),
@@ -1813,6 +1816,15 @@ const A_SCENARIOS = {
       { a: "curate", b: "you", cap: "Curator: “proposed into finserv, awaiting review”" },
     ],
   },
+  analyse: {
+    steps: [
+      { a: "you", b: "coord", cap: "You ask: “at 4,200 tx/s and 0.8% flagged, how many step-ups per hour?”" },
+      { a: "coord", b: "analyst", cap: "Coordinator delegates → transfer_to_agent(analyst)" },
+      { a: "analyst", b: "sandbox", cap: "Analyst writes Python and runs it in the isolated sandbox" },
+      { a: "sandbox", b: "analyst", cap: "Sandbox returns the computed result: 120,960 step-ups/hour" },
+      { a: "analyst", b: "you", cap: "Analyst explains the numbers it actually computed" },
+    ],
+  },
 };
 
 // The union of every scenario edge, drawn faintly as the always-visible agent map.
@@ -1828,7 +1840,8 @@ const A_ALL_EDGES = (() => {
 
 function aColor(kind) {
   return { out: cssVar("--faint"), agent: cssVar("--signal"),
-    brain: cssVar("--domain-2"), res: cssVar("--domain-3") }[kind] || cssVar("--muted");
+    brain: cssVar("--domain-2"), res: cssVar("--domain-3"),
+    sandbox: cssVar("--coral") }[kind] || cssVar("--muted");
 }
 function agentsResize() {
   const r = agentCanvas.getBoundingClientRect(); if (!r.width) return;
@@ -1888,18 +1901,36 @@ function aParticle(a, b, t) {
 function aNode(id, active) {
   const n = AN()[id], p = aPos(n), col = aColor(n.kind);
   const w = aBoxW(), h = A_BOXH, x0 = p.x - w / 2, y0 = p.y - h / 2;
-  // Opaque base first so an edge never shows through, then a tint if active.
+  const sandboxed = n.kind === "sandbox";
+  // Opaque base first so an edge never shows through, then a tint if active. The
+  // sandbox carries a permanent faint tint so its isolated nature reads at rest too.
   ax.fillStyle = cssVar("--panel"); ax.fillRect(x0, y0, w, h);
-  if (active) { ax.fillStyle = withAlpha(col, 0.14); ax.fillRect(x0, y0, w, h); }
-  ax.strokeStyle = active ? col : cssVar("--hair");
-  ax.lineWidth = active ? 2 : 1;
+  if (sandboxed) { ax.fillStyle = withAlpha(col, active ? 0.16 : 0.07); ax.fillRect(x0, y0, w, h); }
+  else if (active) { ax.fillStyle = withAlpha(col, 0.14); ax.fillRect(x0, y0, w, h); }
+  // A dashed border marks the sandbox as a walled-off environment (vs the solid boxes).
+  if (sandboxed) ax.setLineDash([6, 4]);
+  ax.strokeStyle = active ? col : (sandboxed ? withAlpha(col, 0.85) : cssVar("--hair"));
+  ax.lineWidth = active ? 2 : (sandboxed ? 1.5 : 1);
   ax.strokeRect(x0, y0, w, h);
-  ax.fillStyle = col; ax.fillRect(x0 + 10, p.y - 7, 7, 7);
+  ax.setLineDash([]);
+  // Corner marker: a "{ }" glyph for the sandbox, a filled square for everything else.
   ax.textAlign = "left"; ax.textBaseline = "alphabetic";
+  if (sandboxed) {
+    ax.fillStyle = col; ax.font = "700 13px " + fam();
+    ax.fillText("{ }", x0 + 8, p.y + 4);
+  } else {
+    ax.fillStyle = col; ax.fillRect(x0 + 10, p.y - 7, 7, 7);
+  }
+  // Clip the label + sub to the box, so a long caption is trimmed at the border instead
+  // of spilling across the diagram.
+  const tx = x0 + (sandboxed ? 34 : 25);
+  ax.save();
+  ax.beginPath(); ax.rect(x0, y0, w - 6, h); ax.clip();
   ax.fillStyle = cssVar("--ink"); ax.font = "700 12.5px " + fam();
-  ax.fillText(n.label, x0 + 25, p.y - 2);
-  ax.fillStyle = cssVar("--muted"); ax.font = "10px " + fam();
-  ax.fillText(n.sub, x0 + 25, p.y + 12);
+  ax.fillText(n.label, tx, p.y - 2);
+  ax.fillStyle = sandboxed ? withAlpha(col, 0.95) : cssVar("--muted"); ax.font = "10px " + fam();
+  ax.fillText(n.sub, tx, p.y + 12);
+  ax.restore();
 }
 // The mode badge and the diagram's live ring: unmistakable live-vs-simulated cue.
 let aModeLabel = "";
@@ -1954,22 +1985,43 @@ function showLiveAnswer() {
   const el = $("#agentanswer");
   if (el) { el.hidden = false; el.classList.toggle("quota", aQuota); }
 }
+// The analyst's sandbox run: show the Python it wrote and the output it got back, so the
+// computation is visible and checkable (not a number pulled from thin air).
+function renderAgentCode(code) {
+  const wrap = $("#agentcode"); if (!wrap) return;
+  if (!code) { wrap.hidden = true; return; }
+  const src = $("#agentcodesrc"); if (src) src.textContent = code.code || "";
+  const out = $("#agentcodeout"); if (out) out.textContent = code.output || "";
+  const ok = $("#agentcodeok"); if (ok) { ok.textContent = code.ok === false ? "⚠ error" : "✓ ok"; ok.classList.toggle("bad", code.ok === false); }
+  wrap.hidden = false;
+}
+// A canned sandbox run for the simulated "Run a calculation" scenario, matching its caption.
+const A_DEMO_CODE = {
+  code: "tx_per_sec = 4200\nflag_rate = 0.008          # 0.8% flagged for step-up\nper_hour = tx_per_sec * flag_rate * 3600\nprint(f\"{per_hour:,.0f} step-ups/hour\")",
+  output: "120,960 step-ups/hour",
+  ok: true,
+};
 function resetLiveAgent() {
   aMode = "demo"; aQueue = []; aCur = null; aStreamDone = false; aLiveAnswer = ""; aAnswerShown = false; aQuota = false;
-  aStepNo = 0; aFiring = false;
+  aStepNo = 0; aFiring = false; aLiveCode = null;
   const el = $("#agentanswer"); if (el) { el.hidden = true; el.classList.remove("quota"); }
   const body = $("#agentanswerbody"); if (body) body.textContent = "";
+  renderAgentCode(null);
 }
 function setScenario(name) {
   if (!A_SCENARIOS[name]) return;
   resetLiveAgent();
   aScenario = name; aStep = 0; aT = 0;
   for (const b of $("#agentseg").querySelectorAll("button")) b.classList.toggle("on", b.dataset.scenario === name);
+  // The simulated calculation shows an illustrative sandbox run alongside the animation.
+  if (name === "analyse") renderAgentCode(A_DEMO_CODE);
   agentsResize(); agentsDraw();
 }
-// One SSE frame from the live run: a step to animate, the final answer, or an error.
+// One SSE frame from the live run: a step to animate, a sandbox code run, the final
+// answer, or an error.
 function handleAgentEvent(msg) {
   if (msg.step && msg.step.edge) aQueue.push({ a: msg.step.edge[0], b: msg.step.edge[1], cap: msg.step.caption || "" });
+  if (msg.code) { aLiveCode = msg.code; renderAgentCode(msg.code); }
   if (msg.error) { aStreamDone = true; aQuota = !!msg.quota; aLiveAnswer = (msg.quota ? "" : "Error: ") + msg.error; }
   if (msg.done) { aStreamDone = true; aLiveAnswer = msg.answer || "(no answer returned)"; }
 }
@@ -2769,8 +2821,8 @@ const TOUR = [
   {
     page: "agents", target: ".agentwrap",
     title: "Put the context to work",
-    body: "A multi-agent team, built on Google ADK, answers grounded, cited questions and can propose new notes, all through the same governed brain. A coordinator delegates to a researcher or a curator; each edge here is a real tool call. Replay a scenario, or <b>Run live</b> to watch the real team stream through.",
-    why: "Curation is half the story; use is the other half. This shows context flowing back out to an AI that stays scoped to exactly what the caller may see.",
+    body: "A multi-agent team, built on Google ADK, answers grounded, cited questions and can propose new notes, all through the same governed brain. A coordinator delegates to a <b>researcher</b>, a <b>curator</b>, or an <b>analyst</b> that writes and runs Python in an isolated <b>sandbox</b> (the dashed box) to compute answers rather than guess them. Each edge here is a real tool call — try <b>Run a calculation</b>, or <b>Run live</b> to watch the real team stream through.",
+    why: "Curation is half the story; use is the other half. This shows context flowing back out to an AI that stays scoped to exactly what the caller may see — and, for anything quantitative, computes it in a sandbox so the numbers are real and checkable.",
   },
   {
     page: "agents", target: ".agentreg",

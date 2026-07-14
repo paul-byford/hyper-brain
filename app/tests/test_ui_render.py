@@ -10,6 +10,8 @@ import functools
 import http.server
 import importlib.util
 import pathlib
+import shutil
+import tempfile
 import threading
 
 import pytest
@@ -27,22 +29,28 @@ RECRUIT = "enterprise-ai-recruitment"
 
 @pytest.fixture(scope="module")
 def ui_server():
-    # Export the data the SPA reads, then serve ui/ on an ephemeral port.
+    # Serve a throwaway copy of ui/ with freshly exported data, so the test never clobbers
+    # the real ui/data (whose config.json the deploy owns -- see ui/serve.py).
     spec = importlib.util.spec_from_file_location(
         "export_ui_data", REPO_ROOT / "scripts" / "export_ui_data.py"
     )
     exporter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(exporter)
+
+    root = pathlib.Path(tempfile.mkdtemp())
+    served = root / "ui"
+    shutil.copytree(UI, served, ignore=shutil.ignore_patterns("data"))
     exporter.export(
-        str(REPO_ROOT / ".brain" / "index.json"), "corpus", "personal", str(UI / "data")
+        str(REPO_ROOT / ".brain" / "index.json"), "corpus", "personal", str(served / "data")
     )
 
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(UI))
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(served))
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{port}/index.html"
     httpd.shutdown()
+    shutil.rmtree(root, ignore_errors=True)
 
 
 def test_explorer_renders_and_isolation_follows_identity(ui_server):

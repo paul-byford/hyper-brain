@@ -37,3 +37,31 @@ git diff --cached | grep -inE '@[a-z0-9.-]+\.[a-z]{2,}|[a-z0-9-]+\.a\.run\.app'
 
 If it matches anything that is a real address, URL, or id, replace it with a
 placeholder before committing.
+
+## When changing the web UI, mind the guided tour
+
+The UI ships a replayable **guided tour** (`#starttour`; the tour engine and its ordered
+steps live in `ui/app.js`) that spotlights elements by selector and anchors an explanatory
+card to them. UI changes can silently break it: a renamed or removed `id`, a deleted or
+re-ordered element, or a new surface the tour never mentions. Whenever you touch the UI:
+
+- **Do not break it.** Replay the tour end to end (the "Guided tour" button) and confirm
+  every step still finds and spotlights the element it targets. A step whose target
+  selector no longer exists is a broken tour — fix the selector or the step.
+- **Consider enhancing it.** If your change adds or meaningfully reworks a feature (a new
+  page, a new primary action, a surface worth explaining), judge whether it is significant
+  enough to deserve tour coverage. If so, propose a concrete new step (or an edit to an
+  existing one) as part of the same change rather than leaving the tour stale.
+
+## When adopting a new Google platform feature, keep the UI honest
+
+The **Overview** and **Architecture** tabs are the product's transparent account of what it
+runs on — the Sources → brain → Surfaces flow, and the in-tenancy Google Cloud resource
+map. When you introduce a Google Cloud or agent-platform capability the project has **not
+used before** (a new Vertex AI feature, a new agent-platform primitive, a new managed
+service), check whether those two tabs should be updated so the depicted stack still
+matches reality — e.g. add the resource/box to the Architecture map, or a line to the
+Overview flow. Keep it accurate: only depict what is actually wired up, and update the
+tab(s) as part of the change that introduces the feature. See
+[`docs/agent-platform-opportunities.md`](docs/agent-platform-opportunities.md) for the
+platform features in play.

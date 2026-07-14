@@ -21,6 +21,7 @@ https://github.com/user-attachments/assets/6f0f878a-d781-4c4b-a7de-ba6f46dbca70
 - **Build plan and status:** [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
 - **Tracing walkthrough:** [`docs/observability.md`](docs/observability.md)
 - **Remote connectors (OAuth):** [`docs/oauth.md`](docs/oauth.md): add the brain to Claude/ChatGPT by URL
+- **Agent platform opportunities:** [`docs/agent-platform-opportunities.md`](docs/agent-platform-opportunities.md): Google Gemini Enterprise Agent Platform features, and how Hyper Brain could demonstrate each
 
 ## A look around
 

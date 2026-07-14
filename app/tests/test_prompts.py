@@ -6,7 +6,7 @@ from brain_app.prompts import Prompt, get_prompt, prompt, registry
 
 
 def test_registry_has_versioned_hashed_prompts():
-    assert {p.name for p in registry()} == {"researcher", "curator", "coordinator"}
+    assert {p.name for p in registry()} == {"researcher", "curator", "analyst", "coordinator"}
     for entry in registry():
         assert entry.version  # a semantic version is pinned
         assert len(entry.sha) == 12  # a stable content hash identifies the text
