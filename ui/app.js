@@ -2027,7 +2027,11 @@ function handleAgentEvent(msg) {
   if (msg.step && msg.step.edge) aQueue.push({ a: msg.step.edge[0], b: msg.step.edge[1], cap: msg.step.caption || "" });
   if (msg.code) { aLiveCode = msg.code; renderAgentCode(msg.code); }
   if (msg.error) { aStreamDone = true; aQuota = !!msg.quota; aLiveAnswer = (msg.quota ? "" : "Error: ") + msg.error; }
-  if (msg.done) { aStreamDone = true; aLiveAnswer = msg.answer || "(no answer returned)"; }
+  if (msg.done) {
+    aStreamDone = true; aLiveAnswer = msg.answer || "(no answer returned)";
+    // Model Armor flagged the question (e.g. prompt-injection): surfaced above the answer, not blocked.
+    if (msg.guard && msg.guard.length) aLiveAnswer = "🛡️ Model Armor flagged " + msg.guard.join(", ") + " in your question (surfaced, not blocked).\n\n" + aLiveAnswer;
+  }
 }
 // Phase 3: stream the real ADK run over SSE and light each edge as its event fires.
 async function runLiveAgent() {
@@ -2321,6 +2325,8 @@ function openDraft(draft) {
   // extract, not that their source was unusable), so a degraded draft is explained.
   $("#draftquota").hidden = !draft.quota_degraded;
   if (draft.quota_degraded) studioMsg("Gemini's shared quota is busy, so this draft is the raw extract without AI clean-up. You can still edit and create it, or retry in a moment.");
+  // Model Armor redact-then-allow: a detected secret/PII was masked before the draft was shown.
+  if (draft.guard_note) studioMsg("🛡️ " + draft.guard_note + " so it never lands in the corpus. The rest of the draft is untouched.");
   renderDraftTargets();
   renderDraftPreview();
   updateSplitVisibility();

@@ -22,3 +22,13 @@ resource "google_project_service" "base" {
   # and re-enabling is the expensive/slow operation, not leaving them on.
   disable_on_destroy = false
 }
+
+# Model Armor is enabled only when the content guard is configured (model_armor_template set),
+# so a deployment that does not use it never turns the API on.
+resource "google_project_service" "model_armor" {
+  count = var.model_armor_template != "" ? 1 : 0
+
+  project            = var.project_id
+  service            = "modelarmor.googleapis.com"
+  disable_on_destroy = false
+}

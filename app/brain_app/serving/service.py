@@ -14,6 +14,7 @@ import binascii
 import os
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from ..auth import (
     Identity,
@@ -374,7 +375,11 @@ class BrainService:
             if s is not None:
                 s.set_attribute("brain.citation_count", len(result.citations))
                 s.set_attribute("brain.gap_count", len(result.gaps))
-            return result
+            # Redact any PII/secret before the answer leaves the service (it may reach a guest);
+            # a no-op when Model Armor is unconfigured.
+            from ..safety import model_armor
+
+            return replace(result, text=model_armor.scan(result.text).text)
 
     def get_document(self, identity: Identity, doc_id: str) -> dict:
         domains = self._visible_domains(identity)
@@ -439,6 +444,7 @@ class BrainService:
             # And the target domain must be one the caller may actually write.
             if domain not in writable:
                 raise DomainNotAuthorized(domain)
+            content, guard_note = self._guard_write(content)
             proposal = build_proposal(
                 domain=domain,
                 title=title,
@@ -447,7 +453,7 @@ class BrainService:
                 source_url=source_url,
                 doc_type=doc_type,
             )
-            return self.gate.submit(proposal)
+            return self._with_note(self.gate.submit(proposal), guard_note)
 
     def add_document(
         self,
@@ -485,6 +491,7 @@ class BrainService:
                 )
             if domain not in writable:
                 raise DomainNotAuthorized(domain)
+            content, guard_note = self._guard_write(content)
             proposal = build_proposal(
                 domain=domain,
                 title=title,
@@ -497,7 +504,7 @@ class BrainService:
             self._rate_limit(identity)
             result = self.note_gate.submit(proposal)  # note_gate = live corpus write
             self.reindexer.trigger()
-            return result
+            return self._with_note(result, guard_note)
 
     # ---- Content lifecycle: edit / delete, and the moderation boundary -----------
     def _require_not_guest(self, identity: Identity) -> None:
@@ -506,6 +513,22 @@ class BrainService:
         which a guest must not inherit)."""
         if identity.is_guest:
             raise GuestReadOnly("guests are read-only; sign in with Google to save changes")
+
+    def _guard_write(self, content: str) -> tuple[str, str]:
+        """Model Armor redact-then-allow for content about to be persisted (esp. into a shared
+        space): returns the possibly-redacted content and a short note naming what was redacted
+        ('' if nothing / when unconfigured). A leaked secret or PII is masked in place, so it
+        never lands in the corpus, while the useful content still saves."""
+        from ..safety import model_armor
+
+        verdict = model_armor.scan(content)
+        if not verdict.redactions:
+            return content, ""
+        kinds = ", ".join(sorted({r.lower() for r in verdict.redactions}))
+        return verdict.text, f"Model Armor redacted {kinds}"
+
+    def _with_note(self, result: ProposalResult, note: str) -> ProposalResult:
+        return replace(result, detail=f"{result.detail} {note}".strip()) if note else result
 
     def _rate_limit(self, identity: Identity) -> None:
         """Cap writes per identity per minute (anti-spam) before a live write lands."""
@@ -577,6 +600,7 @@ class BrainService:
 
             old_slug = doc_id.rsplit("/", 1)[-1]
             new_slug = _slugify(new_title)
+            content, guard_note = self._guard_write(content)
             proposal = build_proposal(
                 domain=domain,
                 title=new_title,
@@ -589,7 +613,8 @@ class BrainService:
             if new_slug != old_slug:
                 self.deleter.delete(domain, old_slug)  # renamed: drop the old file
             self.reindexer.trigger()
-            return {"status": "saved", "doc_id": f"{domain}/{new_slug}", "detail": result.detail}
+            detail = f"{result.detail} {guard_note}".strip()
+            return {"status": "saved", "doc_id": f"{domain}/{new_slug}", "detail": detail}
 
     def delete_document(self, identity: Identity, doc_id: str) -> dict:
         """Delete a document. Allowed for the owner (personal) or a moderator."""
@@ -678,6 +703,7 @@ class BrainService:
         with span(
             "brain.add_note", **{"brain.domain": personal, "brain.principal": identity.subject}
         ):
+            content, guard_note = self._guard_write(content)
             proposal = build_proposal(
                 domain=personal,
                 title=title,
@@ -690,7 +716,7 @@ class BrainService:
             self._rate_limit(identity)
             result = self.note_gate.submit(proposal)
             self.reindexer.trigger()  # make the note searchable promptly
-            return result
+            return self._with_note(result, guard_note)
 
     # ---- Autolinker: suggest and create links among the caller's own notes -------
     def _personal_note_ids(self, identity: Identity) -> list[str]:
@@ -1067,6 +1093,7 @@ class BrainService:
                 "file": "Document",
                 "text": "Note",
             }.get(kind, "Note")
+            body, guard_note = self._guard_write(body)
             return {
                 "title": title,
                 "content": body,
@@ -1075,6 +1102,7 @@ class BrainService:
                 "quota_degraded": quota_degraded,
                 "tags": tags,
                 "type": okf_type,
+                "guard_note": guard_note,
             }
 
     @staticmethod

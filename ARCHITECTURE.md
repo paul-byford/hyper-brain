@@ -281,6 +281,27 @@ A brand-new Google user with no team grant is therefore never a dead end: they l
 on commons (content to start using) plus their own empty personal space (a place to
 write), and see anything shared with them alongside their own domains.
 
+### Content safety at the shared boundary (Model Armor)
+
+The domain ACL decides *who may see what*; it does not inspect the *content* itself. So a
+second, complementary guard sits on the two places where content becomes shared or
+guest-visible: **Google Model Armor**, called **in-region** (europe-west2 — the endpoint region
+is derived from the template name). Content bound for a shared space (a write, proposal, edit or
+Studio draft) and every agent answer on the guest read path passes through it. Detected PII and
+secrets (Sensitive Data Protection) are **redacted in place** from the exact code-point ranges
+Model Armor returns — **redact then allow**, so a leaked password or card never lands in the
+corpus or reaches a guest, while the useful content still saves. Prompt-injection / jailbreak
+and responsible-AI hits are surfaced as **flags** rather than blocks: the agents' tool-only
+guardrails already bound what an injected instruction could do, so flagging keeps the run honest
+without refusing a legitimate question that merely *mentions* an attack.
+
+It is **env-gated** on `BRAIN_MODEL_ARMOR_TEMPLATE`, a pure pass-through no-op when unset, so a
+deployment that does not want it (and the offline tests) never call out. Terraform enables the
+API, provisions the template (SDP + prompt-injection + responsible-AI; the malicious-URI filter
+is omitted because europe-west2 does not support it) and grants the brain `roles/modelarmor.user`.
+The guard is **best-effort**: any Model Armor error returns the text unchanged, because content
+safety must never hard-fail a write or an answer on an availability blip.
+
 ---
 
 ## 8. The agent (Google ADK)

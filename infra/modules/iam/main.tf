@@ -121,3 +121,12 @@ resource "google_project_iam_member" "brain_documentai_user" {
   role    = "roles/documentai.apiUser"
   member  = "serviceAccount:${google_service_account.brain.email}"
 }
+
+# When the Model Armor content guard is on, the brain sanitizes written content and answers
+# through it, so it needs to call the sanitize APIs. modelarmor.user is the least role for that.
+resource "google_project_iam_member" "brain_model_armor_user" {
+  count   = var.model_armor_enabled ? 1 : 0
+  project = var.project_id
+  role    = "roles/modelarmor.user"
+  member  = "serviceAccount:${google_service_account.brain.email}"
+}

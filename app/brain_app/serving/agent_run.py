@@ -228,6 +228,23 @@ def _build_team(service: BrainService, identity: Identity, model: str):
     )
 
 
+def _guard_answer(text: str) -> str:
+    """Redact PII/secrets from the agent's final answer before it reaches the user (the
+    coordinator's and analyst's direct replies don't pass through service.answer). No-op when
+    Model Armor is unconfigured."""
+    from ..safety import model_armor
+
+    return model_armor.scan(text).text
+
+
+def _input_flags(query: str) -> list[str]:
+    """Model Armor flags on the user's query (e.g. prompt-injection) -- surfaced, not blocked;
+    the agents' tool-only guardrails already bound what an injected instruction could do."""
+    from ..safety import model_armor
+
+    return model_armor.scan(query, kind="prompt").flags
+
+
 def _run_config():
     """A hard ceiling on model calls, so a pathological delegation loop terminates cleanly
     (a surfaced error) instead of hanging the Agents page at dozens of steps. A normal run is
@@ -332,8 +349,12 @@ async def run_agent_async(
                 answer = part.text
                 final_author = author
     await _store_memory(sess_svc, mem_svc, identity, user, session.id)
+    answer = _guard_answer(answer)
     trace = build_trace(query, calls, answer, final_author)
     trace["session"] = session.id
+    flags = _input_flags(query)
+    if flags:
+        trace["guard"] = flags
     if code_blocks:
         trace["code"] = code_blocks[-1]
     return trace
@@ -402,4 +423,8 @@ async def stream_agent_run(
     dest = _agent_id(final_author)
     label = {"research": "Researcher", "curate": "Curator", "analyst": "Analyst"}.get(dest, "Agent")
     yield _sse({"step": {"edge": [dest, "you"], "caption": f"{label} responded to you"}})
-    yield _sse({"done": True, "answer": answer})
+    done = {"done": True, "answer": _guard_answer(answer)}
+    flags = _input_flags(query)
+    if flags:
+        done["guard"] = flags  # e.g. prompt-injection in the question: surfaced, not blocked
+    yield _sse(done)

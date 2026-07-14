@@ -125,12 +125,13 @@ module "registry" {
 }
 
 module "iam" {
-  source        = "./modules/iam"
-  project_id    = var.project_id
-  name_prefix   = var.name_prefix
-  index_bucket  = module.storage.index_bucket
-  corpus_bucket = module.storage.corpus_bucket
-  shares_bucket = module.storage.shares_bucket
+  source              = "./modules/iam"
+  project_id          = var.project_id
+  name_prefix         = var.name_prefix
+  index_bucket        = module.storage.index_bucket
+  corpus_bucket       = module.storage.corpus_bucket
+  shares_bucket       = module.storage.shares_bucket
+  model_armor_enabled = var.model_armor_template != ""
 
   depends_on = [google_project_service.base]
 }
@@ -197,7 +198,7 @@ module "brain_service" {
     BRAIN_OTEL         = local.otel_exporter
     # When the OAuth AS is live, accept both Google ID tokens (the agent) and our
     # AS's access tokens (remote connectors); otherwise Google only.
-    }, local.code_interpreter_env, local.memory_env, local.oauth_live ? {
+    }, local.code_interpreter_env, local.memory_env, local.model_armor_env, local.oauth_live ? {
     BRAIN_AUTH         = "composite"
     BRAIN_OAUTH_ISSUER = var.auth_audience
     BRAIN_OAUTH_JWKS   = "${var.auth_audience}/jwks"
@@ -259,6 +260,14 @@ locals {
   # apply host); Terraform just wires the env from the variable.
   memory_env = var.agent_engine_resource != "" ? {
     BRAIN_AGENT_ENGINE = var.agent_engine_resource
+  } : {}
+
+  # Model Armor content guard is on when model_armor_template names a template. Create it once
+  # with scripts/provision_model_armor.py (in a region that supports it, e.g. europe-west2) and
+  # record the resource name in the gitignored tfvars. Its name flows to the brain as
+  # BRAIN_MODEL_ARMOR_TEMPLATE; the brain SA is also granted roles/modelarmor.user below.
+  model_armor_env = var.model_armor_template != "" ? {
+    BRAIN_MODEL_ARMOR_TEMPLATE = var.model_armor_template
   } : {}
 }
 

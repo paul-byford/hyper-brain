@@ -206,3 +206,17 @@ variable "agent_engine_resource" {
     project-specific value, so keep it in the gitignored tfvars, not a tracked file.
   EOT
 }
+
+variable "model_armor_template" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    A Model Armor template (full resource name) backing the content guard. When set, the brain
+    gets BRAIN_MODEL_ARMOR_TEMPLATE and is granted roles/modelarmor.user, and content bound for
+    a shared space (and agent answers on the guest read path) is scanned: PII/secrets are
+    redacted in place (redact-then-allow), prompt-injection / responsible-AI hits are flagged.
+    In-region (the endpoint region is derived from the template name). Create the template once
+    with scripts/provision_model_armor.py and put its resource name here -- a project-specific
+    value, so keep it in the gitignored tfvars, not a tracked file.
+  EOT
+}
