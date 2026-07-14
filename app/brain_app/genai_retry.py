@@ -14,6 +14,8 @@ so the offline core and its tests never import it.
 
 from __future__ import annotations
 
+import os
+
 # Five attempts across ~1s, 2s, 4s, 8s, 16s (each perturbed by jitter) rides out a
 # per-minute quota blip without making a stuck request wait too long. 429 (quota) and
 # 503 (transient backend) are the retryable statuses; 4xx client errors are not.
@@ -32,6 +34,17 @@ QUOTA_MESSAGE = (
     "runs on Vertex's free dynamic quota, which throttles under load. Please try again "
     "in a moment."
 )
+
+
+def gemini_location() -> str:
+    """The region for Gemini *generative* calls (agent reasoning, answer synthesis, curation).
+
+    Defaults to Vertex's ``global`` endpoint, which pools capacity across regions and so has
+    far higher availability than any single region's free dynamic shared quota -- a busy region
+    can otherwise 429 an agent run mid-flow. Only the prompt and response transit this endpoint;
+    embeddings, sessions, memory and the corpus all stay in ``GOOGLE_CLOUD_LOCATION``
+    (europe-west2). Override with ``BRAIN_GEMINI_LOCATION`` (e.g. back to a specific region)."""
+    return os.environ.get("BRAIN_GEMINI_LOCATION", "global")
 
 
 def is_quota_error(exc: BaseException) -> bool:

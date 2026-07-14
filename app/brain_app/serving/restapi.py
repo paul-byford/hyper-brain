@@ -282,7 +282,8 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
         query = str(data.get("query", "")).strip()
         if not query:
             return JSONResponse({"error": "a query is required"}, status_code=400)
-        result = await run_agent_async(service, identity, query)
+        session_id = str(data.get("session") or "") or None
+        result = await run_agent_async(service, identity, query, session_id=session_id)
         return JSONResponse(result)
 
     async def agent_stream(request, identity):
@@ -296,11 +297,23 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
         query = str(data.get("query", "")).strip()
         if not query:
             return JSONResponse({"error": "a query is required"}, status_code=400)
+        # A prior session id continues the conversation (short-term memory).
+        session_id = str(data.get("session") or "") or None
         return StreamingResponse(
-            stream_agent_run(service, identity, query),
+            stream_agent_run(service, identity, query, session_id=session_id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    async def memory_list(request, identity):
+        # The caller's OWN long-term memories (scoped to their verified subject), for the
+        # "what the brain remembers about you" panel. Empty for guests / when unconfigured.
+        import asyncio
+
+        from .memory import enabled, list_memories
+
+        memories = await asyncio.to_thread(list_memories, identity)
+        return JSONResponse({"memories": memories, "enabled": enabled()})
 
     route("/api/me", ["GET"], me)
     route("/api/domains", ["GET"], domains)
@@ -327,6 +340,7 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/accept", ["POST"], accept)
     route("/api/agent/run", ["POST"], agent_run)
     route("/api/agent/stream", ["POST"], agent_stream)
+    route("/api/memory", ["GET"], memory_list)
     route("/api/link/suggestions", ["GET"], link_suggestions)
     route("/api/link/suggest-for", ["POST"], link_suggest_for)
     route("/api/link", ["POST"], link)

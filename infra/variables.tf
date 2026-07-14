@@ -193,3 +193,16 @@ variable "code_interpreter_location" {
   default     = "us-central1"
   description = "Region for the Code Interpreter extension (only us-central1 is supported)."
 }
+
+variable "agent_engine_resource" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    A provisioned Vertex AI Agent Engine instance (full resource name) backing Sessions +
+    user-scoped Memory Bank. When set, the brain and agent get BRAIN_AGENT_ENGINE and the
+    team gains persistent conversations and per-user memory (in-region, europe-west2). Memory
+    is always scoped to the verified caller's subject; guests get none. Create the instance
+    once with scripts/provision_agent_engine.py and put its resource name here -- it is a
+    project-specific value, so keep it in the gitignored tfvars, not a tracked file.
+  EOT
+}

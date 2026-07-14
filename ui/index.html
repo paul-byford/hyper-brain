@@ -273,7 +273,12 @@
       <span class="eyebrow">Run live</span>
       <input id="agentquery" type="text" placeholder="Ask the real agent team a question, e.g. how should I write a good note?" />
       <button class="gobtn" id="agentrun">Run ▸</button>
-      <p class="agentlivehint">Type a question above and hit <b>Run ▸</b> to replace the simulation with a real, streamed run of the agent team.</p>
+      <button class="ghostbtn" id="agentnewconvo" hidden>＋ New conversation</button>
+      <p class="agentlivehint">Type a question above and hit <b>Run ▸</b> to replace the simulation with a real, streamed run of the agent team. Follow-up questions continue the same conversation.</p>
+    </div>
+    <div class="agentmemory" id="agentmemory" hidden>
+      <div class="agentmemlbl mono"><span class="spark"></span>What the brain remembers about you<span class="agentmempriv">· private to you</span></div>
+      <ul class="agentmemlist" id="agentmemlist"></ul>
     </div>
     <div class="agentstatus">
       <span class="agentmode demo" id="agentmode">Simulated flow</span>

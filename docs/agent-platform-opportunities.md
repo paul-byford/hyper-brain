@@ -35,8 +35,8 @@ of this is about deepening and surfacing what we do, not starting from scratch.
 
 | Feature | Purpose | How Hyper Brain could demonstrate it |
 | --- | --- | --- |
-| `◇` **Sessions** | Maintain interaction history within a single conversation for ongoing context. | Our live agent run is one-shot per query. Add Sessions so a follow-up ("and how does that compare to last quarter?") keeps context in the Agents page runner, with the session id shown in the trace. |
-| `◇` **Memory Bank** | Extracts, stores, and retrieves personalized user info across sessions. | Give each signed-in user a Memory Bank so the brain remembers their recurring interests, preferred domains, and terminology, and personalizes answers — stored per-identity and clamped by the same domain ACL, so personalization never crosses a boundary. |
+| `✓` **Sessions** | Maintain interaction history within a single conversation for ongoing context. | **Done.** The live agent run uses Agent Engine **Sessions** (in-region, europe-west2): the coordinator returns a session id, follow-up questions continue the same conversation, and a "New conversation" button starts fresh. Guests get ephemeral in-memory sessions. |
+| `✓` **Memory Bank** | Extracts, stores, and retrieves personalized user info across sessions. | **Done.** Signed-in users get an Agent Engine **Memory Bank** (in-region): the server recalls memories relevant to the question and injects them into the run (server-side, never a tool), and Memory Bank extracts durable ones after. Every read/write is scoped to the **verified subject** (never a client parameter), so a user's memories never reach anyone else — a hermetic isolation eval enforces it; **guests get none**; a "what the brain remembers about you" panel surfaces it. |
 
 ## Security and governance
 

@@ -316,6 +316,14 @@ up their own agent.
   the curator (whose proposal lands in the **human review queue** (section 12), never
   live), and anything needing arithmetic to the analyst. The brain enforces the ACL
   behind every tool, so the whole team is scoped to what the caller may see and write.
+- **Memory + sessions (signed-in, optional):** when an Agent Engine instance is
+  configured (`enable_memory`, provisioned in-region in europe-west2), the live run gains
+  Agent Engine **Sessions** (conversation continuity — follow-up questions keep context)
+  and a per-user **Memory Bank** (durable, cross-session memory). Recalled memories are
+  injected into the run **server-side, never as a tool**, so a prompt injection can't reach
+  them; Memory Bank extracts durable ones after. Every read and write is scoped to the
+  **verified caller's subject** (never a client parameter), so a user's memory never crosses
+  to anyone else — a hermetic isolation eval enforces it, and **guests get none**.
 - **Deterministic offline tier:** the same agent runs as a single researcher backed
   by a `FakeBrainModel` and in-process tools, so the golden and isolation evals
   (`tool_trajectory` + `response_match`) are hermetic and free in CI.

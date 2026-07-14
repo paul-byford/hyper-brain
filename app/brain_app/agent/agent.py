@@ -73,30 +73,36 @@ def _live_team() -> LlmAgent:
     # Interpreter when configured, else Gemini's built-in in-region sandbox). It carries no
     # brain tools, so the sandbox stays isolated from the corpus.
     from .code_executor import code_executor
+    from .model import agent_model
 
-    model = os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
+    # Global Gemini endpoint + shared retry, one instance shared across the team.
+    model = agent_model(os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash"))
+    # Each specialist is a leaf: it disallows transfer, so once the coordinator delegates the
+    # specialist does its work and its reply ends the run. That makes the coordinator a single-
+    # hop router and removes the sub-agent -> coordinator -> sub-agent ping-pong that can
+    # otherwise loop forever, and it keeps the analyst's built-in code sandbox from colliding
+    # with an auto-added transfer tool.
+    leaf = {"disallow_transfer_to_parent": True, "disallow_transfer_to_peers": True}
     researcher = LlmAgent(
         name="researcher",
         model=model,
         instruction=prompt("researcher"),
         tools=[_live_toolset(RESEARCH_TOOLS)],
+        **leaf,
     )
     curator = LlmAgent(
         name="curator",
         model=model,
         instruction=prompt("curator"),
         tools=[_live_toolset(CURATE_TOOLS)],
+        **leaf,
     )
     analyst = LlmAgent(
         name="analyst",
         model=model,
         instruction=prompt("analyst"),
         code_executor=code_executor(),
-        # Gemini rejects a request that mixes the built-in code-execution tool with any
-        # function tool, and a sub-agent is otherwise auto-given transfer_to_agent. So the
-        # analyst disallows transfer: it carries ONLY the sandbox, answers, and the run ends.
-        disallow_transfer_to_parent=True,
-        disallow_transfer_to_peers=True,
+        **leaf,
     )
     return LlmAgent(
         name="brain_agent",

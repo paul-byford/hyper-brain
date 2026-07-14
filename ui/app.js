@@ -249,6 +249,7 @@ async function bootLive(me, docs) {
   initLiveChannel(); // cross-tab pending-note updates (same browser)
   startLivePoll(); // keep this tab current (picks up content added anywhere)
   ensureIdxTicker(); // live "indexing…" status while added content is pending
+  renderAgentMemory(); // "what the brain remembers about you" (signed-in, non-guest)
   setPage("connect"); // Open on the Overview tab.
   maybeAutostartTour();
 }
@@ -741,6 +742,7 @@ function wireLive() {
   // Agents page: run the real ADK team live.
   $("#agentrun").addEventListener("click", runLiveAgent);
   $("#agentquery").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runLiveAgent(); } });
+  const anc = $("#agentnewconvo"); if (anc) anc.addEventListener("click", newConversation);
 
   $("#uploadbtn").addEventListener("click", () => { if (isGuest()) return guestPrompt("upload a file"); $("#fileinput").click(); });
   $("#fileinput").addEventListener("change", async (e) => {
@@ -1759,6 +1761,7 @@ let aQueue = [], aCur = null, aStreamDone = false, aLiveAnswer = "", aAnswerShow
 let aStepNo = 0; // count of live steps shown so far (for numbering the caption)
 let aFiring = false; // submitted, awaiting the first real event: pulse the You box
 let aLiveCode = null; // the analyst's last sandbox run: { code, output, ok }
+let aSessionId = null; // the live conversation id, so follow-ups keep context (Sessions)
 
 // Positions are normalised (0..1). Left: you. The coordinator is a hub that fans out
 // to its two specialists (researcher up, curator down), so a delegation edge never
@@ -2020,6 +2023,7 @@ function setScenario(name) {
 // One SSE frame from the live run: a step to animate, a sandbox code run, the final
 // answer, or an error.
 function handleAgentEvent(msg) {
+  if (msg.session) aSessionId = msg.session; // keep the conversation for the next question
   if (msg.step && msg.step.edge) aQueue.push({ a: msg.step.edge[0], b: msg.step.edge[1], cap: msg.step.caption || "" });
   if (msg.code) { aLiveCode = msg.code; renderAgentCode(msg.code); }
   if (msg.error) { aStreamDone = true; aQuota = !!msg.quota; aLiveAnswer = (msg.quota ? "" : "Error: ") + msg.error; }
@@ -2036,7 +2040,7 @@ async function runLiveAgent() {
     const resp = await fetch(`${config.api_url}/api/agent/stream`, {
       method: "POST",
       headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
-      body: JSON.stringify({ query: q }),
+      body: JSON.stringify({ query: q, session: aSessionId || undefined }),
     });
     if (!resp.ok || !resp.body) throw new Error(`agent stream failed (${resp.status})`);
     const reader = resp.body.getReader(), dec = new TextDecoder();
@@ -2057,7 +2061,36 @@ async function runLiveAgent() {
     aStreamDone = true; aFiring = false; aLiveAnswer = "Run failed: " + String(e.message || e);
   } finally {
     $("#agentrun").disabled = false;
+    const nb = $("#agentnewconvo"); if (nb && aSessionId) nb.hidden = false; // a conversation exists now
+    renderAgentMemory(); // the run may have taught the brain something new about you
   }
+}
+// Start a fresh conversation: drop the session so the next question has no prior context.
+function newConversation() {
+  aSessionId = null;
+  const nb = $("#agentnewconvo"); if (nb) nb.hidden = true;
+  const el = $("#agentanswer"); if (el) el.hidden = true;
+  renderAgentCode(null);
+  const cap = $("#agentcap"); if (cap) cap.textContent = "New conversation — ask a fresh question.";
+}
+// The caller's OWN long-term memories (server-scoped to them). Signed-in, non-guest only;
+// hidden when memory is unconfigured or there is nothing remembered yet.
+async function renderAgentMemory() {
+  const wrap = $("#agentmemory"), list = $("#agentmemlist"); if (!wrap || !list) return;
+  if (!LIVE || isGuest()) { wrap.hidden = true; return; } // guests have no memory
+  try {
+    const r = await fetch(`${config.api_url}/api/memory`, { headers: { authorization: `Bearer ${token()}` } });
+    if (!r.ok) { wrap.hidden = true; return; }
+    const data = await r.json();
+    if (!data.enabled) { wrap.hidden = true; list.innerHTML = ""; return; } // memory not configured
+    const items = (data && data.memories) || [];
+    // Show the panel for any signed-in caller, with a placeholder until there's something,
+    // so the feature is visible (and it's clear this is private to you).
+    list.innerHTML = items.length
+      ? items.map((m) => `<li>${esc(m)}</li>`).join("")
+      : `<li class="agentmemempty">Nothing yet. Ask the team a question and I'll remember what's useful about you — the domains and topics you work in — to make future answers more relevant.</li>`;
+    wrap.hidden = false;
+  } catch { wrap.hidden = true; }
 }
 
 // ---- Agent registry: model inventory + versioned prompts -------------------

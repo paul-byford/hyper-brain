@@ -732,6 +732,17 @@ body.guest #username { color: var(--signal-ink); }
 .agentcodesrc { color: var(--ink); }
 .agentcodeout { color: color-mix(in srgb, var(--coral) 30%, var(--ink)); font-weight: 600; }
 .adot-sandbox { background: var(--coral); }
+/* "What the brain remembers about you": the caller's own memories, private to them. */
+.agentmemory {
+  border: 1px solid color-mix(in srgb, var(--domain-2) 40%, var(--hair));
+  background: color-mix(in srgb, var(--domain-2) 5%, var(--panel));
+  border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.agentmemory[hidden] { display: none; }
+.agentmemlbl { display: flex; align-items: center; gap: 7px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.agentmempriv { text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--domain-2) 45%, var(--muted)); margin-left: 2px; }
+.agentmemlist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.agentmemempty { list-style: none; margin-left: -18px; color: var(--muted); font-size: 12.5px; }
 
 /* ---- Autolinker: connect your notes (personal space) ---- */
 .linksbox { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hair); display: flex; flex-direction: column; gap: 9px; }

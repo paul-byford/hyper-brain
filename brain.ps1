@@ -73,13 +73,21 @@ function Show-LogTail {
 # Run a native step (a scriptblock), streaming stdout+stderr to the console and the
 # deploy log. On a non-zero exit, print the tail of the log and its path, then exit,
 # so the real error is visible even when the run is piped or backgrounded.
+#
+# `2>&1` merges a native tool's stderr into the pipeline, but in PS 5.1 each stderr line
+# becomes an ErrorRecord that PowerShell renders as a red "NativeCommandError" (with an
+# "At brain.ps1:.." decoration) even under ErrorActionPreference=Continue. Docker/gcloud/
+# terraform write ordinary progress to stderr, so that painted routine output red. Piping
+# through ForEach-Object { "$_" } stringifies each item (ErrorRecords -> their plain text)
+# onto the success stream, so the same output shows as normal white lines. Exit codes are
+# unaffected ($LASTEXITCODE still reflects the native command).
 function Invoke-Step([string]$What, [scriptblock]$Block) {
     Note $What
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        if ($Script:DeployLog) { & $Block 2>&1 | Tee-Object -FilePath $Script:DeployLog -Append }
-        else { & $Block 2>&1 }
+        if ($Script:DeployLog) { & $Block 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $Script:DeployLog -Append }
+        else { & $Block 2>&1 | ForEach-Object { "$_" } }
     } finally { $ErrorActionPreference = $previous }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Error: $What failed (exit code $LASTEXITCODE)." -ForegroundColor Red

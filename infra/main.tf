@@ -197,7 +197,7 @@ module "brain_service" {
     BRAIN_OTEL         = local.otel_exporter
     # When the OAuth AS is live, accept both Google ID tokens (the agent) and our
     # AS's access tokens (remote connectors); otherwise Google only.
-    }, local.code_interpreter_env, local.oauth_live ? {
+    }, local.code_interpreter_env, local.memory_env, local.oauth_live ? {
     BRAIN_AUTH         = "composite"
     BRAIN_OAUTH_ISSUER = var.auth_audience
     BRAIN_OAUTH_JWKS   = "${var.auth_audience}/jwks"
@@ -226,7 +226,7 @@ module "agent_service" {
     # The agent mints an ID token for this audience to call the brain.
     BRAIN_AUDIENCE = module.brain_service.uri
     BRAIN_OTEL     = local.otel_exporter
-  }, local.code_interpreter_env)
+  }, local.code_interpreter_env, local.memory_env)
 
   depends_on = [google_project_service.base]
 }
@@ -246,6 +246,19 @@ module "code_interpreter" {
 locals {
   code_interpreter_env = var.enable_code_interpreter ? {
     BRAIN_CODE_INTERPRETER = module.code_interpreter[0].resource_name
+  } : {}
+}
+
+locals {
+  # User-scoped memory (Agent Engine Sessions + Memory Bank) is on when agent_engine_resource
+  # names a provisioned instance. Create it once with scripts/provision_agent_engine.py
+  # (europe-west2, in-region) and record its resource name in the gitignored tfvars -- it is
+  # a project-specific value, so it never lands in a tracked file. Its name flows to the
+  # brain + agent as BRAIN_AGENT_ENGINE, and the team gains persistent conversations and
+  # per-user memory. There is no apply-time script (that would need the vertex SDK on the
+  # apply host); Terraform just wires the env from the variable.
+  memory_env = var.agent_engine_resource != "" ? {
+    BRAIN_AGENT_ENGINE = var.agent_engine_resource
   } : {}
 }
 

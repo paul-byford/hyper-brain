@@ -186,35 +186,30 @@ def _bound_tools(service: BrainService, identity: Identity):
     }
 
 
-def _model(model: str):
-    """Wrap the model name in an ADK ``Gemini`` carrying the shared retry policy, so the
-    agent's own Gemini calls ride out a 429 (dynamic shared quota) with exponential
-    backoff and jitter instead of failing the run. Falls back to a plain model name on
-    an older ADK that lacks ``retry_options``, so the agent still runs (just without the
-    extra backoff), rather than failing to build."""
-    from google.adk.models import Gemini
-
-    from ..genai_retry import retry_options
-
-    try:
-        return Gemini(model=model, retry_options=retry_options())
-    except (TypeError, ValueError):
-        return model
-
-
 def _build_team(service: BrainService, identity: Identity, model: str):
     from google.adk.agents import LlmAgent
 
     from ..agent.code_executor import code_executor
+    from ..agent.model import agent_model
 
     tools = _bound_tools(service, identity)
-    # One retry-configured model instance, shared across the agents.
-    llm = _model(model)
+    # One model instance (global endpoint + shared 429/503 retry), shared across the agents.
+    llm = agent_model(model)
+    # Each specialist is a leaf: it disallows transfer, so once the coordinator delegates the
+    # specialist does its work and its reply ends the run. That makes the coordinator a single-
+    # hop router and removes the sub-agent -> coordinator -> sub-agent ping-pong that can
+    # otherwise loop forever (notably when a reused session replays earlier transfers). It also
+    # keeps the analyst's built-in code sandbox from colliding with an auto-added transfer tool.
+    leaf = {"disallow_transfer_to_parent": True, "disallow_transfer_to_peers": True}
     researcher = LlmAgent(
-        name="researcher", model=llm, instruction=prompt("researcher"), tools=tools["researcher"]
+        name="researcher",
+        model=llm,
+        instruction=prompt("researcher"),
+        tools=tools["researcher"],
+        **leaf,
     )
     curator = LlmAgent(
-        name="curator", model=llm, instruction=prompt("curator"), tools=tools["curator"]
+        name="curator", model=llm, instruction=prompt("curator"), tools=tools["curator"], **leaf
     )
     # The analyst carries no brain tools: only Gemini's server-side code sandbox, kept
     # isolated from the corpus. It computes over figures already in the conversation.
@@ -223,11 +218,7 @@ def _build_team(service: BrainService, identity: Identity, model: str):
         model=llm,
         instruction=prompt("analyst"),
         code_executor=code_executor(),
-        # Gemini rejects mixing the built-in code-execution tool with any function tool, and
-        # a sub-agent is otherwise auto-given transfer_to_agent. So the analyst disallows
-        # transfer: it carries ONLY the sandbox, answers directly, and the run ends there.
-        disallow_transfer_to_parent=True,
-        disallow_transfer_to_peers=True,
+        **leaf,
     )
     return LlmAgent(
         name="brain_agent",
@@ -237,18 +228,89 @@ def _build_team(service: BrainService, identity: Identity, model: str):
     )
 
 
-async def run_agent_async(
-    service: BrainService, identity: Identity, query: str, model: str | None = None
-) -> dict:
-    """Run the team and return {steps, answer}. Async so the REST handler can await it."""
-    from google.adk.runners import InMemoryRunner
+def _run_config():
+    """A hard ceiling on model calls, so a pathological delegation loop terminates cleanly
+    (a surfaced error) instead of hanging the Agents page at dozens of steps. A normal run is
+    a handful of calls; this is generous headroom over that."""
+    from google.adk.agents.run_config import RunConfig
+
+    return RunConfig(max_llm_calls=20)
+
+
+async def _prepare_run(service, identity, query, model, session_id):
+    """Build the runner (with Agent Engine Sessions + Memory Bank when configured), reuse or
+    create the caller's session, and build the message. Any memories recalled for THIS caller
+    (``user_id`` = verified subject) are prepended by the server -- never fetched via a tool,
+    so a prompt injection can't reach them and there is no built-in-tool conflict."""
     from google.genai import types
 
-    model = model or os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
+    from . import memory as mem_mod
+
     user = identity.subject or "user"
+    # Persistent Agent Engine sessions + memory only for a signed-in caller when memory is
+    # configured; guests and memory-off deployments keep the exact previous stateless path
+    # (InMemoryRunner), so nothing about the existing behaviour changes for them.
+    mem_svc = None if identity.is_guest else mem_mod.memory_service()
     team = _build_team(service, identity, model)
-    runner = InMemoryRunner(agent=team, app_name="brain")
-    session = await runner.session_service.create_session(app_name="brain", user_id=user)
+    if mem_svc is not None:
+        from google.adk.artifacts import InMemoryArtifactService
+        from google.adk.runners import Runner
+
+        sess_svc = mem_mod.session_service(identity)
+        # Match InMemoryRunner's service set (it wires an in-memory artifact service) so the
+        # multi-agent flow behaves identically; only sessions + memory become persistent.
+        runner = Runner(
+            app_name="brain",
+            agent=team,
+            session_service=sess_svc,
+            memory_service=mem_svc,
+            artifact_service=InMemoryArtifactService(),
+        )
+    else:
+        from google.adk.runners import InMemoryRunner
+
+        runner = InMemoryRunner(agent=team, app_name="brain")
+        sess_svc = runner.session_service
+    session = None
+    if session_id:  # continue the conversation if a valid, own session id was passed
+        try:
+            session = await sess_svc.get_session(
+                app_name="brain", user_id=user, session_id=session_id
+            )
+        except Exception:
+            session = None
+    if session is None:
+        session = await sess_svc.create_session(app_name="brain", user_id=user)
+    recalled = await mem_mod.recall(mem_svc, identity, query)
+    message = types.Content(
+        role="user", parts=[types.Part(text=mem_mod.format_recall(recalled) + query)]
+    )
+    return runner, sess_svc, mem_svc, session, message, user
+
+
+async def _store_memory(sess_svc, mem_svc, identity, user, session_id):
+    """Extract + store durable memories from the finished session (managed, user-scoped)."""
+    import contextlib
+
+    from . import memory as mem_mod
+
+    with contextlib.suppress(Exception):  # best-effort: memory never fails a run
+        session = await sess_svc.get_session(app_name="brain", user_id=user, session_id=session_id)
+        await mem_mod.remember(mem_svc, identity, session)
+
+
+async def run_agent_async(
+    service: BrainService,
+    identity: Identity,
+    query: str,
+    model: str | None = None,
+    session_id: str | None = None,
+) -> dict:
+    """Run the team and return {steps, answer, session}. Async so the REST handler awaits it."""
+    model = model or os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
+    runner, sess_svc, mem_svc, session, message, user = await _prepare_run(
+        service, identity, query, model, session_id
+    )
 
     calls: list[tuple] = []
     code_blocks: list[dict] = []
@@ -256,9 +318,7 @@ async def run_agent_async(
     answer = ""
     final_author = "researcher"
     async for event in runner.run_async(
-        user_id=user,
-        session_id=session.id,
-        new_message=types.Content(role="user", parts=[types.Part(text=query)]),
+        user_id=user, session_id=session.id, new_message=message, run_config=_run_config()
     ):
         author = getattr(event, "author", "") or ""
         for part in (event.content.parts if event.content else []) or []:
@@ -271,19 +331,25 @@ async def run_agent_async(
             if getattr(part, "text", None) and event.is_final_response():
                 answer = part.text
                 final_author = author
+    await _store_memory(sess_svc, mem_svc, identity, user, session.id)
     trace = build_trace(query, calls, answer, final_author)
+    trace["session"] = session.id
     if code_blocks:
         trace["code"] = code_blocks[-1]
     return trace
 
 
 def run_agent(
-    service: BrainService, identity: Identity, query: str, model: str | None = None
+    service: BrainService,
+    identity: Identity,
+    query: str,
+    model: str | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """Sync wrapper (for a CLI or tests) around :func:`run_agent_async`."""
     import asyncio
 
-    return asyncio.run(run_agent_async(service, identity, query, model))
+    return asyncio.run(run_agent_async(service, identity, query, model, session_id))
 
 
 def _sse(obj: dict) -> str:
@@ -293,17 +359,16 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
-async def stream_agent_run(service: BrainService, identity: Identity, query: str, model=None):
+async def stream_agent_run(
+    service: BrainService, identity: Identity, query: str, model=None, session_id=None
+):
     """Yield SSE frames as the real ADK run fires, so the UI lights each edge live.
 
-    Emits ``{"step": {...}}`` per tool call/transfer as it happens, then a final
+    Emits ``{"session": id}`` (so the UI can continue the conversation), ``{"step": {...}}``
+    per tool call/transfer, an optional ``{"code": {...}}`` sandbox block, then a final
     ``{"done": true, "answer": ...}`` (or ``{"error": ...}`` if the run fails).
     """
-    from google.adk.runners import InMemoryRunner
-    from google.genai import types
-
     model = model or os.environ.get("BRAIN_AGENT_MODEL", "gemini-2.5-flash")
-    user = identity.subject or "user"
     asked = f"You asked: “{query.strip()[:80]}”"
     yield _sse({"step": {"edge": ["you", "coord"], "caption": asked}})
 
@@ -311,13 +376,12 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
     answer = ""
     pending_code: dict = {}
     try:
-        team = _build_team(service, identity, model)
-        runner = InMemoryRunner(agent=team, app_name="brain")
-        session = await runner.session_service.create_session(app_name="brain", user_id=user)
+        runner, sess_svc, mem_svc, session, message, user = await _prepare_run(
+            service, identity, query, model, session_id
+        )
+        yield _sse({"session": session.id})  # so a follow-up can continue this conversation
         async for event in runner.run_async(
-            user_id=user,
-            session_id=session.id,
-            new_message=types.Content(role="user", parts=[types.Part(text=query)]),
+            user_id=user, session_id=session.id, new_message=message, run_config=_run_config()
         ):
             author = getattr(event, "author", "") or ""
             for part in (event.content.parts if event.content else []) or []:
@@ -330,6 +394,7 @@ async def stream_agent_run(service: BrainService, identity: Identity, query: str
                 if getattr(part, "text", None) and event.is_final_response():
                     answer = part.text
                     final_author = author
+        await _store_memory(sess_svc, mem_svc, identity, user, session.id)
     except Exception as exc:  # a run failure becomes a clean terminal frame, not a hang
         yield _sse(_error_frame(exc))
         return

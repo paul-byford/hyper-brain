@@ -88,9 +88,12 @@ class GeminiCurator:
         location: str | None = None,
         generate=None,
     ) -> None:
+        from ..genai_retry import gemini_location
+
         self.model = model or os.environ.get("BRAIN_CURATE_MODEL", "gemini-2.5-flash")
         self.project = project or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        self.location = location or os.environ.get("GOOGLE_CLOUD_LOCATION", "europe-west2")
+        # Generative calls default to the high-availability global endpoint (see gemini_location).
+        self.location = location or gemini_location()
         self._generate = generate
 
     def _call(self, prompt: str) -> str:
