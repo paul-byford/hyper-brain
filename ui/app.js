@@ -2141,20 +2141,29 @@ let AS_TOOLS = [];          // the tool palette the backend allows
 let AS_CAN_EDIT = false;    // is this caller a moderator/admin
 async function renderAgentStudio() {
   const panel = $("#agentstudio"); if (!panel) return;
-  if (!LIVE || isGuest()) { panel.hidden = true; return; }
+  if (!LIVE) { panel.hidden = true; return; } // no backend (demo mode): nothing to show
+  panel.hidden = false;
+  // The composer is admin-only, but we still render it (dimmed + inert) for guests and
+  // non-moderators with a notice, so the panel is present for the guided tour and it's clear
+  // what unlocks it. Everyone may read the registered specialists (they're on the map too).
+  let data = { tools: AS_TOOLS, can_edit: false, agents: [] };
   try {
     const r = await fetch(`${config.api_url}/api/studio/agents`, { headers: { authorization: `Bearer ${token()}` } });
-    if (!r.ok) { panel.hidden = true; return; }
-    const data = await r.json();
-    AS_TOOLS = data.tools || [];
-    AS_CAN_EDIT = !!data.can_edit;
-    // The composer is admin-only: only a moderator (a team write grant) may author the
-    // shared team. Everyone else just doesn't see it.
-    panel.hidden = !AS_CAN_EDIT;
-    if (!AS_CAN_EDIT) return;
-    renderAsTools([]);
-    renderAsList(data.agents || []);
-  } catch { panel.hidden = true; }
+    if (r.ok) data = await r.json();
+  } catch { /* keep defaults: still render the skeleton */ }
+  AS_TOOLS = (data.tools && data.tools.length) ? data.tools
+    : (AS_TOOLS.length ? AS_TOOLS : ["search", "answer", "get_document", "list_domains", "propose_document"]);
+  AS_CAN_EDIT = !!data.can_edit;
+  const grid = $("#asgrid"), locked = $("#aslocked"), lmsg = $("#aslockedmsg");
+  if (grid) grid.classList.toggle("locked", !AS_CAN_EDIT);
+  if (locked) locked.hidden = AS_CAN_EDIT;
+  if (lmsg && !AS_CAN_EDIT) {
+    lmsg.innerHTML = isGuest()
+      ? "Agent Studio is for <b>moderators</b>. Sign in with Google, then ask an admin to enable you as a moderator (a team write grant), to compose custom specialists that join the live team."
+      : "Agent Studio is for <b>moderators</b>. Ask an admin to enable you as a moderator (a team write grant) to compose custom specialists here.";
+  }
+  renderAsTools([]);
+  renderAsList(data.agents || []);
 }
 function renderAsTools(selected) {
   const box = $("#astools"); if (!box) return;

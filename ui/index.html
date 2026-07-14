@@ -413,7 +413,11 @@
         <h3>Compose a custom specialist for the team</h3>
         <p>Name it, tell the coordinator when to use it, write its system prompt, and pick the brain tools it may call. Preview it against a question, then register it &mdash; it joins the live team on the Agents page. Its tools stay scoped to whoever runs it, so it can never reach more than that person may.</p>
       </div>
-      <div class="asgrid">
+      <div class="aslocked" id="aslocked" hidden>
+        <span class="aslockicon">&#128274;</span>
+        <span id="aslockedmsg"></span>
+      </div>
+      <div class="asgrid" id="asgrid">
         <div class="asform">
           <label class="aslbl" for="asname">Name <span class="ashint">lower_snake_case</span></label>
           <input id="asname" type="text" placeholder="reviewer" maxlength="31" />
