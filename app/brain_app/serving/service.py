@@ -595,12 +595,13 @@ class BrainService:
         """The registered custom specialists (visible to everyone, since they are part of the
         shared team on the Agents map), plus whether this caller may edit them and the tool
         palette a new specialist may draw from."""
-        from ..agent.studio import ALLOWED_TOOLS
+        from ..agent.studio import ALLOWED_TOOLS, GARDEN
 
         return {
             "agents": [s.to_dict() for s in self.agent_store.all()],
             "can_edit": self.is_studio_admin(identity),
             "tools": list(ALLOWED_TOOLS),
+            "garden": GARDEN,  # prebuilt recipes for the Agent Garden gallery
         }
 
     def save_custom_agent(self, identity: Identity, spec: dict) -> dict:

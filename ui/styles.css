@@ -1173,8 +1173,20 @@ body.guest #username { color: var(--signal-ink); }
 .agentrubric .rb-reason { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
 
 /* Agents page: live "catalogued in GCP Agent Registry" strip */
-.agentreggcp { margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--hair); border-radius: 10px; background: var(--panel-2); font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; line-height: 1.6; }
+.agentreggcp { margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--hair); border-radius: 10px; background: var(--panel-2); font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.agentreggcp .gcpline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.agentreggcp .gcpline + .gcpline { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
 .agentreggcp .gcpdot { width: 7px; height: 7px; border-radius: 50%; background: #2e7d54; flex: none; }
 .agentreggcp b { color: var(--ink); font-weight: 600; }
 .agentreggcp .gcpchip { font-family: var(--mono); font-size: 11px; background: var(--panel); border: 1px solid var(--hair); border-radius: 999px; padding: 2px 8px; }
 .agentreggcp .gcpchip.ours { border-color: var(--gold); color: var(--gold); }
+
+/* Agent Garden: prebuilt recipe gallery in the Studio panel */
+.agentgarden { margin-bottom: 20px; }
+.agentgardenlbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.agentgardengrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.gardencard { border: 1px solid var(--hair); border-radius: 10px; padding: 12px 14px; background: var(--panel-2); display: flex; flex-direction: column; gap: 6px; }
+.gardencard h5 { margin: 0; font-size: 14px; font-weight: 600; }
+.gardencard .gc-desc { font-size: 12px; color: var(--muted); line-height: 1.45; flex: 1; }
+.gardencard .gc-tools { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.gardencard .gc-use { align-self: flex-start; margin-top: 4px; }

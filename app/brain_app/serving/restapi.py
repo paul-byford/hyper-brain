@@ -331,15 +331,15 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
         return JSONResponse(result)
 
     async def registry_list(request, identity):
-        # The agents catalogued in the official GCP Agent Registry (our team's Services show
-        # here alongside auto-registered Google agents + our Agent Engine). Read-only; empty
-        # when the registry isn't configured/reachable.
+        # The agents + MCP-server skills catalogued in the official GCP Agent Registry (our
+        # Services show here beside auto-registered Google agents + our Agent Engine). Read-only.
         import asyncio
 
-        from ..agent.registry import enabled, list_registered
+        from ..agent.registry import enabled, list_registered, list_skills
 
         agents = await asyncio.to_thread(list_registered)
-        return JSONResponse({"agents": agents, "enabled": enabled()})
+        skills = await asyncio.to_thread(list_skills)
+        return JSONResponse({"agents": agents, "skills": skills, "enabled": enabled()})
 
     async def eval_rubrics(request, identity):
         # Adaptive-rubric assessment of an answer (in-region, ~2 Gemini calls), for the eval

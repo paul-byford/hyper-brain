@@ -45,6 +45,58 @@ _BUILTINS = [
 ]
 
 
+# Skill Registry: the brain's governed MCP tools, published as one audited Service so any org
+# agent can discover and reuse them. Content follows the MCP `tools/list` shape.
+_MCP_SERVICE_ID = f"{_SERVICE_PREFIX}mcp"
+
+
+def _tool(name: str, description: str, props: dict, required: list[str]) -> dict:
+    return {
+        "name": name,
+        "description": description,
+        "inputSchema": {"type": "object", "properties": props, "required": required},
+    }
+
+
+_BRAIN_TOOLS = [
+    _tool(
+        "search",
+        "Search the governed brain; ranked hits scoped to your permitted domains.",
+        {"query": {"type": "string"}},
+        ["query"],
+    ),
+    _tool(
+        "answer",
+        "A grounded, cited answer to a question, scoped to your permitted domains.",
+        {"query": {"type": "string"}},
+        ["query"],
+    ),
+    _tool(
+        "get_document",
+        "Fetch one document by id, if it is in a domain you may see.",
+        {"doc_id": {"type": "string"}},
+        ["doc_id"],
+    ),
+    _tool("list_domains", "List the knowledge domains you may retrieve from.", {}, []),
+    _tool(
+        "propose_document",
+        "Propose a new document into a team domain (staged to review).",
+        {"domain": {"type": "string"}, "title": {"type": "string"}, "content": {"type": "string"}},
+        ["domain", "title", "content"],
+    ),
+]
+
+
+def _mcp_service_body() -> dict:
+    base = os.environ.get("BRAIN_URL", "https://hyper-brain.invalid").rstrip("/")
+    return {
+        "displayName": "hyper-brain tools",
+        "description": "The brain's governed retrieval + curation tools (one audited toolset).",
+        "interfaces": [{"url": base, "protocolBinding": "JSONRPC"}],
+        "mcpServerSpec": {"type": "TOOL_SPEC", "content": {"tools": _BRAIN_TOOLS}},
+    }
+
+
 def _location() -> str:
     return os.environ.get("BRAIN_AGENT_REGISTRY_LOCATION", "europe-west2")
 
@@ -143,30 +195,60 @@ def sync(project: str | None = None, location: str | None = None) -> dict:
     session = _session()
     parent = _parent(project, location)
     created, patched, failed = [], [], []
-    for entry in agent_cards():
-        body = {
-            "displayName": entry["display_name"],
-            "description": entry["description"],
-            "agentSpec": {"type": "A2A_AGENT_CARD", "content": entry["card"]},
-        }
-        sid = entry["service_id"]
-        name = f"{parent}/services/{sid}"
+
+    def put(service_id: str, display: str, body: dict) -> None:
+        name = f"{parent}/services/{service_id}"
         try:
-            got = session.get(f"{_HOST}/{name}", timeout=30)
-            if got.status_code == 200:
+            if session.get(f"{_HOST}/{name}", timeout=30).status_code == 200:
                 session.patch(f"{_HOST}/{name}", json=body, timeout=60).raise_for_status()
-                patched.append(entry["display_name"])
+                patched.append(display)
             else:
                 session.post(
                     f"{_HOST}/{parent}/services",
-                    params={"serviceId": sid},
+                    params={"serviceId": service_id},
                     json=body,
                     timeout=60,
                 ).raise_for_status()
-                created.append(entry["display_name"])
-        except Exception as exc:  # noqa: BLE001 - report per-agent, keep going
-            failed.append(f"{entry['display_name']}: {exc}")
+                created.append(display)
+        except Exception as exc:  # noqa: BLE001 - report per-item, keep going
+            failed.append(f"{display}: {exc}")
+
+    for entry in agent_cards():
+        put(
+            entry["service_id"],
+            entry["display_name"],
+            {
+                "displayName": entry["display_name"],
+                "description": entry["description"],
+                "agentSpec": {"type": "A2A_AGENT_CARD", "content": entry["card"]},
+            },
+        )
+    # The Skill Registry: publish the brain's MCP toolset as one governed Service.
+    put(_MCP_SERVICE_ID, "hyper-brain tools", _mcp_service_body())
     return {"created": created, "patched": patched, "failed": failed, "location": location}
+
+
+def list_skills(project: str | None = None, location: str | None = None) -> list[dict]:
+    """The MCP servers (and their tools) catalogued as Skills in the platform registry."""
+    project = project or _project()
+    location = location or _location()
+    if not project:
+        return []
+    out: list[dict] = []
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        resp = _session().get(f"{_HOST}/{_parent(project, location)}/mcpServers", timeout=30)
+        resp.raise_for_status()
+        for m in resp.json().get("mcpServers", []):
+            out.append(
+                {
+                    "name": m.get("displayName") or m.get("mcpServerId"),
+                    "tools": [t.get("name") for t in (m.get("tools") or []) if t.get("name")],
+                    "ours": f"services:{_SERVICE_PREFIX}" in str(m.get("mcpServerId", "")),
+                }
+            )
+    return out
 
 
 def list_registered(project: str | None = None, location: str | None = None) -> list[dict]:
@@ -216,6 +298,11 @@ def main(argv: list[str] | None = None) -> int:
         for a in agents:
             tag = "  [ours]" if a["ours"] else ""
             print(f"  {a['name']:22} v{a.get('version') or '-':8} skills={a.get('skills')}{tag}")
+        skills = list_skills()
+        print(f"\nSkill Registry -- MCP servers ({len(skills)}):")
+        for s in skills:
+            tag = "  [ours]" if s["ours"] else ""
+            print(f"  {s['name']:22} tools={s.get('tools')}{tag}")
     return 0
 
 

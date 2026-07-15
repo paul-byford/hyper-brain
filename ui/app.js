@@ -2196,6 +2196,7 @@ async function renderAgentMemory() {
 // ---- Agent Studio: compose a custom specialist for the live team (admin-only) --------
 let AS_TOOLS = [];          // the tool palette the backend allows
 let AS_CAN_EDIT = false;    // is this caller a moderator/admin
+let AS_GARDEN = [];         // Agent Garden prebuilt recipes
 async function renderAgentStudio() {
   const panel = $("#agentstudio"); if (!panel) return;
   if (!LIVE) { panel.hidden = true; return; } // no backend (demo mode): nothing to show
@@ -2211,6 +2212,8 @@ async function renderAgentStudio() {
   AS_TOOLS = (data.tools && data.tools.length) ? data.tools
     : (AS_TOOLS.length ? AS_TOOLS : ["search", "answer", "get_document", "list_domains", "propose_document"]);
   AS_CAN_EDIT = !!data.can_edit;
+  AS_GARDEN = data.garden || [];
+  renderGarden();
   const grid = $("#asgrid"), locked = $("#aslocked"), lmsg = $("#aslockedmsg");
   if (grid) grid.classList.toggle("locked", !AS_CAN_EDIT);
   if (locked) locked.hidden = AS_CAN_EDIT;
@@ -2221,6 +2224,30 @@ async function renderAgentStudio() {
   }
   renderAsTools([]);
   renderAsList(data.agents || []);
+}
+// Agent Garden: prebuilt recipes; "Use this recipe" pre-fills the composer (admins only).
+function renderGarden() {
+  const wrap = $("#agentgarden"), grid = $("#agentgardengrid");
+  if (!wrap || !grid) return;
+  if (!AS_CAN_EDIT || !AS_GARDEN.length) { wrap.hidden = true; return; }
+  grid.innerHTML = AS_GARDEN.map((r, i) => `
+    <div class="gardencard">
+      <h5>${esc(r.title || r.name)}</h5>
+      <div class="gc-desc">${esc(r.description || "")}</div>
+      <div class="gc-tools">${(r.tools || []).map(esc).join(" · ")}</div>
+      <button class="ghostbtn gc-use" data-recipe="${i}">Use this recipe</button>
+    </div>`).join("");
+  for (const b of grid.querySelectorAll(".gc-use")) b.addEventListener("click", () => useRecipe(AS_GARDEN[b.dataset.recipe]));
+  wrap.hidden = false;
+}
+function useRecipe(r) {
+  if (!r) return;
+  $("#asname").value = r.name || "";
+  $("#asdesc").value = r.description || "";
+  $("#asinstr").value = r.instruction || "";
+  renderAsTools(r.tools || []);
+  asMsg(`Loaded the “${r.title || r.name}” recipe — review, tweak, preview, then register.`, "ok");
+  $("#asname").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 function renderAsTools(selected) {
   const box = $("#astools"); if (!box) return;
@@ -2310,7 +2337,12 @@ async function renderRegistryStrip() {
     if (!data.enabled || !agents.length) { el.hidden = true; return; }
     const ours = agents.filter((a) => a.ours), others = agents.length - ours.length;
     const chips = agents.map((a) => `<span class="gcpchip${a.ours ? " ours" : ""}">${esc(a.name)}${a.version ? " v" + esc(a.version) : ""}</span>`).join("");
-    el.innerHTML = `<span class="gcpdot"></span><b>Catalogued in the GCP Agent Registry</b> — ${ours.length} of our agents registered as A2A cards${others ? `, alongside ${others} other platform agent${others === 1 ? "" : "s"}` : ""}: ${chips}`;
+    // Skill Registry: our MCP server's tools, published as reusable Skills (MCP server tools).
+    const ourMcp = ((data.skills) || []).filter((s) => s.ours);
+    const toolCount = ourMcp.reduce((n, s) => n + (s.tools || []).length, 0);
+    const agentLine = `<div class="gcpline"><span class="gcpdot"></span><b>Catalogued in the GCP Agent Registry</b> — ${ours.length} of our agents registered as A2A cards${others ? `, alongside ${others} other platform agent${others === 1 ? "" : "s"}` : ""}: ${chips}</div>`;
+    const skillLine = toolCount ? `<div class="gcpline"><span class="gcpdot"></span><b>Skill Registry</b> — ${toolCount} governed brain tools published as reusable Skills (MCP server tools): ${(ourMcp[0].tools || []).map((t) => `<span class="gcpchip ours">${esc(t)}</span>`).join("")}</div>` : "";
+    el.innerHTML = agentLine + skillLine;
     el.hidden = false;
   } catch { el.hidden = true; }
 }

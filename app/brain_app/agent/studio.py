@@ -27,6 +27,58 @@ ALLOWED_TOOLS = ("search", "answer", "get_document", "list_domains", "propose_do
 _RESERVED = {"researcher", "curator", "analyst", "brain_agent", "coordinator"}
 _NAME = re.compile(r"^[a-z][a-z0-9_]{1,30}$")
 
+# Agent Garden: prebuilt recipes (ready-made specs) a moderator can drop into the composer,
+# tweak, and register. Each is a valid AgentSpec drawing only from ALLOWED_TOOLS.
+GARDEN = [
+    {
+        "name": "onboarding_buddy",
+        "title": "Onboarding buddy",
+        "description": "helping a new joiner find team context, conventions and who does what",
+        "instruction": (
+            "You are the onboarding buddy for a new team member. Use search, answer and "
+            "get_document to surface the team's key documents, conventions and who-does-what, "
+            "and point them to the right domains. Be welcoming and concise, and always cite the "
+            "sources you drew on. Never guess -- if the brain doesn't cover it, say so."
+        ),
+        "tools": ["search", "answer", "get_document", "list_domains"],
+    },
+    {
+        "name": "release_notes_writer",
+        "title": "Release-notes writer",
+        "description": "drafting structured release notes from a set of changes",
+        "instruction": (
+            "You are the release-notes writer. Given a set of changes, ground them in existing "
+            "team material with search and get_document, then draft clear, structured release "
+            "notes (highlights, changes, fixes) and propose_document them into the team domain "
+            "for review. Never invent changes; cite what you relied on."
+        ),
+        "tools": ["search", "get_document", "propose_document"],
+    },
+    {
+        "name": "meeting_notes_curator",
+        "title": "Meeting-notes curator",
+        "description": "turning raw meeting notes into a clean note with decisions and actions",
+        "instruction": (
+            "You are the meeting-notes curator. Turn raw meeting notes into a clean, structured "
+            "note: a short summary, the decisions made, and action items with owners. Ground it "
+            "in existing context with search, then propose_document it into the team domain for "
+            "review. Keep it faithful to what was said."
+        ),
+        "tools": ["search", "propose_document"],
+    },
+    {
+        "name": "policy_checker",
+        "title": "Policy checker",
+        "description": "checking a question or draft against the team's existing conventions",
+        "instruction": (
+            "You are the policy checker. Given a question or a draft, use search and get_document "
+            "to check it against the team's existing conventions and prior decisions, then flag "
+            "gaps, conflicts, or conventions to follow. Be concise and cite what you compared to."
+        ),
+        "tools": ["search", "get_document"],
+    },
+]
+
 
 @dataclass(frozen=True)
 class AgentSpec:
