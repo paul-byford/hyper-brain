@@ -487,6 +487,26 @@ audiences.
   quality), plus Agent Simulation before deploy and Agent Evaluation online
   monitors on live traffic. These cost money and run on demand, not at idle, which
   is why they are off by default.
+- **Shipped: a trace-centric eval workbench (Auto SxS + rubrics).** We built out
+  the platform's evaluate procedure — *design → run and capture the trace → score →
+  refine* — across a UI and a CLI:
+  - **Trace capture + viewer.** A live agent run's **trace** (each tool call with
+    its args, every transfer, and the tool's response) is captured and shown on the
+    Agents page — the doc's "View agent traces", grounding evaluation in *what the
+    agent actually did*, not just its final answer.
+  - **Adaptive rubrics (in-region).** The workbench generates the **assessment
+    criteria** for a question, then critiques the answer against each with a ✓/✗
+    verdict and a one-line reason — mirroring the platform's
+    `RubricGenerationConfig`/`RubricBasedMetric`, but run as two **in-region** Gemini
+    calls so it is fast and live rather than a multi-minute managed job.
+  - **Managed pairwise SxS (`brain sxs`).** The actual **Vertex GenAI Evaluation
+    Service** judges two prompt/model candidates side by side on **groundedness** and
+    **QA quality** over the golden queries, printing win rates and a ship/keep
+    verdict — the "which prompt/model ships" gate for our versioned prompts.
+  - **Region note.** The managed eval service is **us-central1-only** (it 400s in
+    europe-west2, and records per-row errors rather than raising), so the managed
+    metrics run **cross-region** there while the UI's adaptive rubrics stay in-region
+    — the same in-region/managed trade-off the Code Interpreter makes.
 
 **Observability.** ADK emits OpenTelemetry aligned with the GenAI semantic
 conventions, so turning on tracing is configuration, not code: the Terraform

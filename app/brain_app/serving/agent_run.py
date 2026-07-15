@@ -121,6 +121,28 @@ def frames_for_code_part(part, pending: dict) -> list[dict]:
     return out
 
 
+def _detail_record(part, author: str) -> dict | None:
+    """One entry of the captured **trace** (for the trace viewer + trajectory eval): a tool
+    call, a transfer, or the tool's response. The final answer is carried separately."""
+    call = getattr(part, "function_call", None)
+    if call is not None:
+        args = dict(call.args or {})
+        if call.name == "transfer_to_agent":
+            return {"kind": "transfer", "agent": author, "to": str(args.get("agent_name", ""))}
+        return {"kind": "call", "agent": author, "tool": call.name, "args": args}
+    resp = getattr(part, "function_response", None)
+    if resp is not None:
+        out = resp.response
+        text = out.get("result", out) if isinstance(out, dict) else out
+        return {
+            "kind": "result",
+            "agent": author,
+            "tool": getattr(resp, "name", ""),
+            "output": str(text)[:800],
+        }
+    return None
+
+
 def build_trace(query: str, calls: list[tuple], answer: str, final_author: str) -> dict:
     """Assemble the animation trace from the real (author, tool, args) calls."""
     steps = [{"edge": ["you", "coord"], "caption": f"You asked: “{query.strip()[:80]}”"}]
@@ -376,6 +398,7 @@ async def run_agent_async(
     )
 
     calls: list[tuple] = []
+    detail: list[dict] = []
     code_blocks: list[dict] = []
     pending_code: dict = {}
     answer = ""
@@ -388,6 +411,9 @@ async def run_agent_async(
             call = getattr(part, "function_call", None)
             if call is not None:
                 calls.append((author, call.name, dict(call.args or {})))
+            record = _detail_record(part, author)
+            if record is not None:
+                detail.append(record)
             for frame in frames_for_code_part(part, pending_code):
                 if "code" in frame:
                     code_blocks.append(frame["code"])
@@ -398,6 +424,7 @@ async def run_agent_async(
     answer = _guard_answer(answer)
     trace = build_trace(query, calls, answer, final_author)
     trace["session"] = session.id
+    trace["detail"] = detail  # the captured trace: tool calls, transfers, responses
     flags = _input_flags(query)
     if flags:
         trace["guard"] = flags
@@ -475,6 +502,7 @@ async def stream_agent_run(
 
     final_author = "researcher"
     answer = ""
+    detail: list[dict] = []
     pending_code: dict = {}
     try:
         runner, sess_svc, mem_svc, session, message, user = await _prepare_run(
@@ -490,6 +518,9 @@ async def stream_agent_run(
                 if call is not None:
                     for step in _steps_for_call(author, call.name, dict(call.args or {})):
                         yield _sse({"step": step})
+                record = _detail_record(part, author)
+                if record is not None:
+                    detail.append(record)
                 for frame in frames_for_code_part(part, pending_code):
                     yield _sse(frame)
                 if getattr(part, "text", None) and event.is_final_response():
@@ -503,7 +534,7 @@ async def stream_agent_run(
     dest = _agent_id(final_author)
     label = {"research": "Researcher", "curate": "Curator", "analyst": "Analyst"}.get(dest, "Agent")
     yield _sse({"step": {"edge": [dest, "you"], "caption": f"{label} responded to you"}})
-    done = {"done": True, "answer": _guard_answer(answer)}
+    done = {"done": True, "answer": _guard_answer(answer), "detail": detail}
     flags = _input_flags(query)
     if flags:
         done["guard"] = flags  # e.g. prompt-injection in the question: surfaced, not blocked

@@ -294,6 +294,16 @@
       <div class="agentcodeoutlbl mono">Output</div>
       <pre class="agentcodeout mono" id="agentcodeout"></pre>
     </div>
+    <!-- Eval workbench: the captured trace of the run + an adaptive-rubric assessment. -->
+    <div class="agenteval" id="agenteval" hidden>
+      <div class="agentevalhead">
+        <span class="agentevallbl mono">Trace &amp; evaluation</span>
+        <button class="ghostbtn" id="agentevalbtn">Score the answer with rubrics</button>
+      </div>
+      <div class="agenttracelbl mono">Captured trace</div>
+      <ul class="agenttrace" id="agenttrace"></ul>
+      <div class="agentrubrics" id="agentrubrics" hidden></div>
+    </div>
     <div class="agentwrap" id="agentwrap"><canvas id="agentcanvas"></canvas></div>
     <div class="agentlegend">
       <span><i class="adot-gold"></i> ADK agents (coordinator + specialists)</span>

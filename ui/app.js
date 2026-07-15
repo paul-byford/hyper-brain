@@ -744,6 +744,7 @@ function wireLive() {
 
   // Agents page: run the real ADK team live.
   $("#agentrun").addEventListener("click", runLiveAgent);
+  { const eb = $("#agentevalbtn"); if (eb) eb.addEventListener("click", scoreRubrics); }
   $("#agentquery").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runLiveAgent(); } });
   const anc = $("#agentnewconvo"); if (anc) anc.addEventListener("click", newConversation);
 
@@ -1761,6 +1762,7 @@ let aScenario = "ask", aStep = 0, aT = 0;
 // you watch the actual run unfold. Demo mode loops the scripted scenarios.
 let aMode = "demo";
 let aQueue = [], aCur = null, aStreamDone = false, aLiveAnswer = "", aAnswerShown = false, aQuota = false;
+let aLiveDetail = [], aLiveQuery = ""; // the captured trace + the question, for the eval workbench
 let aStepNo = 0; // count of live steps shown so far (for numbering the caption)
 let aFiring = false; // submitted, awaiting the first real event: pulse the You box
 let aLiveCode = null; // the analyst's last sandbox run: { code, output, ok }
@@ -2026,6 +2028,58 @@ function showLiveAnswer() {
   const body = $("#agentanswerbody"); if (body) body.textContent = aLiveAnswer;
   const el = $("#agentanswer");
   if (el) { el.hidden = false; el.classList.toggle("quota", aQuota); }
+  // The eval workbench: the captured trace + an on-demand adaptive-rubric assessment. Shown
+  // only for a real answered run (not a quota/error), where there's a trace to inspect.
+  const evalWrap = $("#agenteval");
+  if (evalWrap) {
+    const show = !aQuota && aLiveDetail && aLiveDetail.length > 0;
+    evalWrap.hidden = !show;
+    if (show) { renderAgentTrace(aLiveDetail); const r = $("#agentrubrics"); if (r) r.hidden = true; }
+  }
+}
+// The captured trace: the real tool calls, transfers and tool responses of the run.
+function renderAgentTrace(detail) {
+  const list = $("#agenttrace"); if (!list) return;
+  const label = (d) => {
+    if (d.kind === "transfer") return `delegated to <b>${esc(d.to)}</b>`;
+    if (d.kind === "call") return `called <b>${esc(d.tool)}</b>(${esc(JSON.stringify(d.args || {}).slice(0, 80))})`;
+    if (d.kind === "result") return `<span class="tr-out">${esc((d.output || "").slice(0, 160))}</span>`;
+    return esc(d.kind || "");
+  };
+  list.innerHTML = detail.map((d) =>
+    `<li><span class="tr-agent">${esc(d.agent || "")}</span><span class="tr-kind">${esc(d.kind)}</span><span class="tr-body">${label(d)}</span></li>`
+  ).join("") || `<li><span class="tr-body tr-out">The coordinator answered directly (no tool calls).</span></li>`;
+}
+// On-demand: generate adaptive rubrics for the question and critique the answer against them.
+async function scoreRubrics() {
+  const wrap = $("#agentrubrics"); const btn = $("#agentevalbtn");
+  if (!wrap) return;
+  wrap.hidden = false; wrap.innerHTML = `<div class="agentrubricnote">Generating rubrics and grading the answer&hellip; (~15s)</div>`;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`${config.api_url}/api/eval/rubrics`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token()}`, "content-type": "application/json" },
+      body: JSON.stringify({ query: aLiveQuery, answer: aLiveAnswer }),
+    });
+    const data = await r.json();
+    renderRubrics(data);
+  } catch (e) {
+    wrap.innerHTML = `<div class="agentrubricnote">Rubric eval failed: ${esc(String(e.message || e))}</div>`;
+  } finally { if (btn) btn.disabled = false; }
+}
+function renderRubrics(data) {
+  const wrap = $("#agentrubrics"); if (!wrap) return;
+  if (data.error) { wrap.innerHTML = `<div class="agentrubricnote">${esc(data.error)}</div>`; return; }
+  const verdicts = data.verdicts || [];
+  if (!verdicts.length) { wrap.innerHTML = `<div class="agentrubricnote">No rubrics were generated.</div>`; return; }
+  const rows = verdicts.map((v) =>
+    `<div class="agentrubric ${v.met ? "met" : "no"}"><span class="rb-mark">${v.met ? "✓" : "✗"}</span><span class="rb-txt">${esc(v.rubric)}${v.reason ? `<span class="rb-reason">${esc(v.reason)}</span>` : ""}</span></div>`
+  ).join("");
+  wrap.innerHTML =
+    `<div class="agentrubricscore">Rubric score: ${data.met}/${data.total} criteria met</div>` +
+    `<div class="agentrubricnote">Adaptive rubrics generated for your question, in-region. The managed RubricBasedMetric + pairwise SxS run via <b>brain eval</b>.</div>` +
+    rows;
 }
 // The analyst's sandbox run: show the Python it wrote and the output it got back, so the
 // computation is visible and checkable (not a number pulled from thin air).
@@ -2045,9 +2099,10 @@ const A_DEMO_CODE = {
 };
 function resetLiveAgent() {
   aMode = "demo"; aQueue = []; aCur = null; aStreamDone = false; aLiveAnswer = ""; aAnswerShown = false; aQuota = false;
-  aStepNo = 0; aFiring = false; aLiveCode = null;
+  aStepNo = 0; aFiring = false; aLiveCode = null; aLiveDetail = [];
   const el = $("#agentanswer"); if (el) { el.hidden = true; el.classList.remove("quota"); }
   const body = $("#agentanswerbody"); if (body) body.textContent = "";
+  const ev = $("#agenteval"); if (ev) ev.hidden = true;
   renderAgentCode(null);
 }
 function setScenario(name) {
@@ -2068,6 +2123,7 @@ function handleAgentEvent(msg) {
   if (msg.error) { aStreamDone = true; aQuota = !!msg.quota; aLiveAnswer = (msg.quota ? "" : "Error: ") + msg.error; }
   if (msg.done) {
     aStreamDone = true; aLiveAnswer = msg.answer || "(no answer returned)";
+    aLiveDetail = msg.detail || []; // the captured trace, for the trace viewer + rubric eval
     // Model Armor flagged the question (e.g. prompt-injection): surfaced above the answer, not blocked.
     if (msg.guard && msg.guard.length) aLiveAnswer = "🛡️ Model Armor flagged " + msg.guard.join(", ") + " in your question (surfaced, not blocked).\n\n" + aLiveAnswer;
   }
@@ -2075,6 +2131,7 @@ function handleAgentEvent(msg) {
 // Phase 3: stream the real ADK run over SSE and light each edge as its event fires.
 async function runLiveAgent() {
   const q = $("#agentquery").value.trim(); if (!q || !LIVE) return;
+  aLiveQuery = q; // remember the question for the rubric eval
   resetLiveAgent();
   aMode = "live"; aStep = 0; aT = 0; aFiring = true; aStepNo = 0; // pulse the You box at once
   $("#agentrun").disabled = true;

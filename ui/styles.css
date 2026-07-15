@@ -1150,3 +1150,24 @@ body.guest #username { color: var(--signal-ink); }
 .asdel { flex: none; background: none; border: 1px solid var(--line, rgba(150,140,110,.4)); border-radius: 6px; color: var(--muted); cursor: pointer; padding: 3px 8px; font-size: 12px; }
 .asdel:hover { color: #b4462e; }
 .asempty { color: var(--muted); font-size: 12.5px; }
+
+/* Agents-page eval workbench: captured trace + adaptive-rubric assessment */
+.agenteval { margin: 14px 0; border: 1px solid var(--hair); border-radius: 12px; padding: 14px 16px; background: var(--panel); }
+.agentevalhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.agentevallbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.agenttracelbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.agenttrace { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.agenttrace li { font-size: 12.5px; padding: 6px 10px; border-radius: 7px; background: var(--panel-2); display: flex; gap: 8px; align-items: baseline; }
+.agenttrace .tr-agent { font-family: var(--mono); font-size: 11px; color: var(--gold); flex: none; }
+.agenttrace .tr-kind { font-family: var(--mono); font-size: 10px; color: var(--muted); flex: none; text-transform: uppercase; }
+.agenttrace .tr-body { min-width: 0; word-break: break-word; }
+.agenttrace .tr-out { color: var(--muted); }
+.agentrubrics { margin-top: 12px; }
+.agentrubricscore { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.agentrubricnote { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.agentrubric { display: flex; gap: 9px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--hair); font-size: 13px; }
+.agentrubric .rb-mark { flex: none; font-weight: 700; }
+.agentrubric.met .rb-mark { color: #2e7d54; }
+.agentrubric.no .rb-mark { color: #b4462e; }
+.agentrubric .rb-txt { min-width: 0; }
+.agentrubric .rb-reason { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }

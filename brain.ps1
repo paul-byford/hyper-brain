@@ -188,6 +188,22 @@ function Cmd-Eval {
     & $py -m pytest app/tests -q -m eval
 }
 
+function Cmd-Sxs {
+    # The "which prompt/model ships" pairwise gate: generate answers for two candidates over the
+    # golden queries, then the managed Vertex GenAI Evaluation Service judges them side by side.
+    $py = Get-Python
+    $proj = Resolve-Project
+    $env:GOOGLE_CLOUD_PROJECT = $proj
+    $env:GOOGLE_CLOUD_LOCATION = $Region
+    $env:GOOGLE_GENAI_USE_VERTEXAI = "true"
+    if (-not $env:BRAIN_CORPUS) { $env:BRAIN_CORPUS = (Join-Path $Root "corpus") }
+    $env:BRAIN_PROFILE = $ProfileName
+    Info "Auto SxS: pairwise 'which prompt/model ships' gate (groundedness + QA quality)"
+    Note "Candidates default to baseline vs a concise-cited prompt. Flags: --a-model --b-model --a-prompt --b-prompt --limit"
+    Set-Location (Join-Path $Root "app")
+    & $py -m brain_app.eval.sxs @Rest
+}
+
 function Cmd-Agent {
     Require-Cmd "adk" "Install the agent extra: pip install -e `".\app[agent]`""
     $agentsDir = Join-Path $Root "app\agents"
@@ -401,6 +417,7 @@ try {
         "index" { Cmd-Index }
         "ingest" { Cmd-Ingest }
         "eval" { Cmd-Eval }
+        "sxs" { Cmd-Sxs }
         "platform" { Cmd-Platform }
         "agent" { Cmd-Agent }
         "ui" { Cmd-Ui }
