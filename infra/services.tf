@@ -32,3 +32,12 @@ resource "google_project_service" "model_armor" {
   service            = "modelarmor.googleapis.com"
   disable_on_destroy = false
 }
+
+# Agent Registry is enabled only when the team is catalogued there (enable_agent_registry).
+resource "google_project_service" "agent_registry" {
+  count = var.enable_agent_registry ? 1 : 0
+
+  project            = var.project_id
+  service            = "agentregistry.googleapis.com"
+  disable_on_destroy = false
+}

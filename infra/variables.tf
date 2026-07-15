@@ -207,6 +207,17 @@ variable "agent_engine_resource" {
   EOT
 }
 
+variable "enable_agent_registry" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Register the agent team in the official GCP **Agent Registry** (agentregistry.googleapis.com,
+    in-region). When true, the API is enabled and the brain SA is granted roles/agentregistry.viewer
+    so the /api/registry surface can read the catalogue. Registration itself (create/patch a Service
+    per agent) is an operator action: run `brain registry sync`. Off by default.
+  EOT
+}
+
 variable "model_armor_template" {
   type        = string
   default     = ""

@@ -330,6 +330,17 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
         result = await preview_custom_agent(service, identity, data.get("spec") or {}, question)
         return JSONResponse(result)
 
+    async def registry_list(request, identity):
+        # The agents catalogued in the official GCP Agent Registry (our team's Services show
+        # here alongside auto-registered Google agents + our Agent Engine). Read-only; empty
+        # when the registry isn't configured/reachable.
+        import asyncio
+
+        from ..agent.registry import enabled, list_registered
+
+        agents = await asyncio.to_thread(list_registered)
+        return JSONResponse({"agents": agents, "enabled": enabled()})
+
     async def eval_rubrics(request, identity):
         # Adaptive-rubric assessment of an answer (in-region, ~2 Gemini calls), for the eval
         # workbench: generate the criteria for the query, critique the answer against them.
@@ -386,6 +397,7 @@ def register_rest_routes(mcp, service: BrainService, verifier: TokenVerifier) ->
     route("/api/studio/agents/delete", ["POST"], studio_agent_delete)
     route("/api/studio/agents/preview", ["POST"], studio_agent_preview)
     route("/api/eval/rubrics", ["POST"], eval_rubrics)
+    route("/api/registry", ["GET"], registry_list)
     route("/api/link/suggestions", ["GET"], link_suggestions)
     route("/api/link/suggest-for", ["POST"], link_suggest_for)
     route("/api/link", ["POST"], link)

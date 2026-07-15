@@ -125,13 +125,14 @@ module "registry" {
 }
 
 module "iam" {
-  source              = "./modules/iam"
-  project_id          = var.project_id
-  name_prefix         = var.name_prefix
-  index_bucket        = module.storage.index_bucket
-  corpus_bucket       = module.storage.corpus_bucket
-  shares_bucket       = module.storage.shares_bucket
-  model_armor_enabled = var.model_armor_template != ""
+  source                 = "./modules/iam"
+  project_id             = var.project_id
+  name_prefix            = var.name_prefix
+  index_bucket           = module.storage.index_bucket
+  corpus_bucket          = module.storage.corpus_bucket
+  shares_bucket          = module.storage.shares_bucket
+  model_armor_enabled    = var.model_armor_template != ""
+  agent_registry_enabled = var.enable_agent_registry
 
   depends_on = [google_project_service.base]
 }

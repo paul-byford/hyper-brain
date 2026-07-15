@@ -20,6 +20,12 @@ variable "model_armor_enabled" {
   description = "When true, grant the brain SA roles/modelarmor.user (the content guard is on)."
 }
 
+variable "agent_registry_enabled" {
+  type        = bool
+  default     = false
+  description = "When true, grant the brain SA roles/agentregistry.viewer (registry read surface)."
+}
+
 variable "shares_bucket" {
   type = string
 }

@@ -28,6 +28,11 @@ output "corpus_bucket" {
   value       = module.storage.corpus_bucket
 }
 
+output "shares_bucket" {
+  description = "The bucket holding the sharing overlay + Agent Studio's custom-agent registry."
+  value       = module.storage.shares_bucket
+}
+
 output "artifact_registry" {
   description = "The Docker Artifact Registry repository."
   value       = module.registry.repository_id

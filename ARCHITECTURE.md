@@ -355,6 +355,17 @@ up their own agent.
   boundary; the admin authors what it *does*, never what it can *reach*. Definitions live in a
   shared GCS registry (in-memory off-cloud), so a new specialist joins the team within the
   cache TTL with no redeploy.
+- **Official Agent Registry (governance catalog).** The whole team — the built-ins **and**
+  every Agent Studio custom specialist — is registered in the platform's **Agent Registry**
+  (`agentregistry.googleapis.com`, in-region europe-west2). Each agent is a `Service` with an
+  **A2A Agent Card**: its version is its prompt version, its skills are the MCP tools it may
+  call, and its framework/model/prompt content-hash ride in the description. `brain registry
+  sync` idempotently creates/patches a Service per agent; `/api/registry` and `brain registry
+  list` read the catalogue back from `agents.list` (where our agents sit beside auto-registered
+  Google agents and our own Agent Engine), and the Agents page surfaces it as a live strip. So
+  the "versioned, content-hashed" claim isn't just drawn — the team is a queryable, audited
+  inventory in the platform's own governance surface. Gated by `enable_agent_registry` (the
+  brain SA gets `agentregistry.viewer` to read; registration is an operator action).
 - **Deterministic offline tier:** the same agent runs as a single researcher backed
   by a `FakeBrainModel` and in-process tools, so the golden and isolation evals
   (`tool_trajectory` + `response_match`) are hermetic and free in CI.

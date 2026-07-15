@@ -162,9 +162,7 @@ def list_memories(identity: Identity, top_k: int = 25) -> list[str]:
         ):
             scope = getattr(m, "scope", None) or {}
             uid = (
-                scope.get("user_id")
-                if isinstance(scope, dict)
-                else getattr(scope, "user_id", None)
+                scope.get("user_id") if isinstance(scope, dict) else getattr(scope, "user_id", None)
             )
             if uid != subject:  # defense in depth: never return another user's memory
                 continue

@@ -22,9 +22,7 @@ def _response(findings=(), pi=False, rai=None):
             }
         },
         "pi_and_jailbreak": {
-            "piAndJailbreakFilterResult": {
-                "matchState": "MATCH_FOUND" if pi else "NO_MATCH_FOUND"
-            }
+            "piAndJailbreakFilterResult": {"matchState": "MATCH_FOUND" if pi else "NO_MATCH_FOUND"}
         },
     }
     if rai:

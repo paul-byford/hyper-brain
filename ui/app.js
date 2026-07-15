@@ -2298,6 +2298,22 @@ async function previewAgent() {
   } catch (e) { out.textContent = "Preview failed: " + String(e.message || e); }
 }
 
+// The team catalogued in the official GCP Agent Registry (agentregistry.googleapis.com):
+// our agents registered as A2A cards, shown alongside other platform agents.
+async function renderRegistryStrip() {
+  const el = $("#agentreggcp"); if (!el || !LIVE) return;
+  try {
+    const r = await fetch(`${config.api_url}/api/registry`, { headers: { authorization: `Bearer ${token()}` } });
+    if (!r.ok) { el.hidden = true; return; }
+    const data = await r.json();
+    const agents = (data && data.agents) || [];
+    if (!data.enabled || !agents.length) { el.hidden = true; return; }
+    const ours = agents.filter((a) => a.ours), others = agents.length - ours.length;
+    const chips = agents.map((a) => `<span class="gcpchip${a.ours ? " ours" : ""}">${esc(a.name)}${a.version ? " v" + esc(a.version) : ""}</span>`).join("");
+    el.innerHTML = `<span class="gcpdot"></span><b>Catalogued in the GCP Agent Registry</b> — ${ours.length} of our agents registered as A2A cards${others ? `, alongside ${others} other platform agent${others === 1 ? "" : "s"}` : ""}: ${chips}`;
+    el.hidden = false;
+  } catch { el.hidden = true; }
+}
 // ---- Agent registry: model inventory + versioned prompts -------------------
 const aFind = (id) => (AGENTS ? AGENTS.agents.find((a) => a.id === id) : null);
 function renderAgentReg() {
@@ -2832,7 +2848,7 @@ function setPage(p) {
   $("#page-connect").hidden = p !== "connect";
   $("#page-arch").hidden = p !== "arch";
   $("#page-agents").hidden = p !== "agents";
-  if (p === "agents") loadCustomAgentNodes(); // reflect any Studio-authored specialists on the map
+  if (p === "agents") { loadCustomAgentNodes(); renderRegistryStrip(); } // Studio agents on the map + GCP registry strip
   const studio = $("#page-studio"); if (studio) studio.hidden = p !== "studio";
   if (p === "studio") { renderStudio(); renderAgentStudio(); }
   const rev = $("#page-review"); if (rev) rev.hidden = p !== "review";

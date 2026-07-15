@@ -130,3 +130,13 @@ resource "google_project_iam_member" "brain_model_armor_user" {
   role    = "roles/modelarmor.user"
   member  = "serviceAccount:${google_service_account.brain.email}"
 }
+
+# When the team is catalogued in the Agent Registry, the /api/registry surface reads the
+# catalogue, so the brain SA needs read access. viewer is the least role for that (registration
+# itself is an operator action via `brain registry sync`, not the brain's).
+resource "google_project_iam_member" "brain_agent_registry_viewer" {
+  count   = var.agent_registry_enabled ? 1 : 0
+  project = var.project_id
+  role    = "roles/agentregistry.viewer"
+  member  = "serviceAccount:${google_service_account.brain.email}"
+}

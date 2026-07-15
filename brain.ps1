@@ -188,6 +188,25 @@ function Cmd-Eval {
     & $py -m pytest app/tests -q -m eval
 }
 
+function Cmd-Registry {
+    # Register our agents in the official GCP Agent Registry, or list what's catalogued.
+    #   brain registry sync   -> create/patch a Service per agent (built-in team + custom)
+    #   brain registry list   -> print the agents catalogued in the platform
+    $py = Get-Python
+    $proj = Resolve-Project
+    $env:GOOGLE_CLOUD_PROJECT = $proj
+    $env:GOOGLE_CLOUD_LOCATION = $Region
+    $env:GOOGLE_GENAI_USE_VERTEXAI = "true"
+    $brainUrl = Tf-Output "brain_url"
+    if ($brainUrl) { $env:BRAIN_URL = "$brainUrl/mcp" }
+    # Read the deployed custom-agent store so `sync` registers Agent Studio agents too.
+    $sharesBucket = Tf-Output "shares_bucket"
+    if ($sharesBucket) { $env:BRAIN_AGENTS_STORE = "gcs"; $env:BRAIN_SHARES_BUCKET = $sharesBucket }
+    Info "Official GCP Agent Registry (agentregistry.googleapis.com, in-region)"
+    Set-Location (Join-Path $Root "app")
+    & $py -m brain_app.agent.registry @Rest
+}
+
 function Cmd-Sxs {
     # The "which prompt/model ships" pairwise gate: generate answers for two candidates over the
     # golden queries, then the managed Vertex GenAI Evaluation Service judges them side by side.
@@ -418,6 +437,7 @@ try {
         "ingest" { Cmd-Ingest }
         "eval" { Cmd-Eval }
         "sxs" { Cmd-Sxs }
+        "registry" { Cmd-Registry }
         "platform" { Cmd-Platform }
         "agent" { Cmd-Agent }
         "ui" { Cmd-Ui }
