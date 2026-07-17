@@ -9,3 +9,7 @@ output "index_bucket" {
 output "shares_bucket" {
   value = google_storage_bucket.shares.name
 }
+
+output "audit_bucket" {
+  value = google_storage_bucket.audit.name
+}

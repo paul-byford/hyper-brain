@@ -87,6 +87,15 @@ resource "google_service_account" "oauth" {
   project      = var.project_id
 }
 
+# The AS may only CREATE audit objects, never overwrite or delete them, so it can append
+# sign-in records but can never tamper with the trail (write-once at the IAM layer).
+resource "google_storage_bucket_iam_member" "oauth_audit_writer" {
+  count  = local.oauth_enabled ? 1 : 0
+  bucket = module.storage.audit_bucket
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.oauth[0].email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "oauth_secret_access" {
   for_each = local.oauth_enabled ? toset([
     google_secret_manager_secret.oauth_signing_key[0].secret_id,
@@ -118,6 +127,8 @@ module "auth_service" {
   env = merge(local.common_env, {
     OAUTH_ISSUER   = var.auth_audience  # this service's own URL
     OAUTH_RESOURCE = var.brain_audience # the brain URL (access-token audience)
+    # Durable, write-once sign-in audit trail (Google sign-ins + guest sessions).
+    BRAIN_AUDIT_BUCKET = module.storage.audit_bucket
   })
   secret_env = local.oauth_live ? {
     OAUTH_SIGNING_KEY    = google_secret_manager_secret.oauth_signing_key[0].secret_id

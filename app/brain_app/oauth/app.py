@@ -23,6 +23,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Route
 
+from . import audit
 from .google import GoogleOidc
 from .issuer import OAuthError, TokenIssuer, authorization_server_metadata
 
@@ -49,6 +50,7 @@ def build_app(issuer: TokenIssuer, google: GoogleOidc) -> Starlette:
         # guest identity that reads the commons but cannot write. For frictionless demos.
         resp = JSONResponse(issuer.mint_guest_token())
         resp.headers["Cache-Control"] = "no-store"
+        audit.record_guest()  # count guest sessions in the durable audit trail (anonymous)
         return resp
 
     async def register(request):
@@ -120,6 +122,8 @@ def build_app(issuer: TokenIssuer, google: GoogleOidc) -> Starlette:
             code_challenge=login["code_challenge"],
             scope=login["scope"],
         )
+        # Durable, write-once sign-in audit (best-effort; no-op unless BRAIN_AUDIT_BUCKET is set).
+        audit.record_signin(guser["sub"], guser["email"])
         return _redirect(
             login["redirect_uri"], {"code": code, "state": login.get("client_state", "")}
         )

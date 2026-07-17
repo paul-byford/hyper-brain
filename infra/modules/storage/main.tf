@@ -84,3 +84,23 @@ resource "google_storage_bucket" "shares" {
     }
   }
 }
+
+# Durable sign-in audit trail: one write-once object per Google sign-in. Versioned and with NO
+# delete lifecycle, so records persist as a compliance-grade trail; the AS SA gets only
+# objectCreator (create, never modify/delete), so it can append records but not tamper.
+resource "google_storage_bucket" "audit" {
+  # checkov:skip=CKV_GCP_62: access logging is controlled-profile hardening; buckets are private
+  # and versioned regardless.
+  name     = "${var.name_prefix}-audit-${var.project_id}"
+  project  = var.project_id
+  location = var.location
+  labels   = var.labels
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = var.force_destroy
+
+  versioning {
+    enabled = true
+  }
+}
